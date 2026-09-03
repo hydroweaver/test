@@ -122,11 +122,18 @@ def init_db(default_provider: str, default_model: str) -> None:
 def _fernet() -> Fernet:
     key = os.environ.get("SETTINGS_ENCRYPTION_KEY")
     if not key:
-        raise RuntimeError(
-            "SETTINGS_ENCRYPTION_KEY is not set. Generate one with: "
-            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
-            "and add it to backend/.env."
-        )
+        # Nothing set - auto-generate one and store it next to the DB, so pasted
+        # keys survive restarts without requiring any manual setup. If DB_PATH
+        # itself isn't persisted (no volume), this resets along with it, which is
+        # fine - there's nothing left to decrypt either.
+        key_path = os.path.join(os.path.dirname(DB_PATH) or ".", "secret.key")
+        os.makedirs(os.path.dirname(key_path) or ".", exist_ok=True)
+        if os.path.exists(key_path):
+            key = open(key_path).read().strip()
+        else:
+            key = Fernet.generate_key().decode()
+            with open(key_path, "w") as f:
+                f.write(key)
     return Fernet(key.encode())
 
 

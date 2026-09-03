@@ -196,10 +196,10 @@ security = HTTPBasic()
 
 
 def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    username = os.environ.get("ADMIN_USERNAME")
-    password = os.environ.get("ADMIN_PASSWORD")
-    if not username or not password:
-        raise HTTPException(status_code=500, detail="ADMIN_USERNAME/ADMIN_PASSWORD not configured on the server")
+    # Defaults to admin/admin if you don't set these - fine for a quick throwaway
+    # test, but set your own ADMIN_USERNAME/ADMIN_PASSWORD before sharing the URL.
+    username = os.environ.get("ADMIN_USERNAME", "admin")
+    password = os.environ.get("ADMIN_PASSWORD", "admin")
     valid = secrets.compare_digest(credentials.username, username) & secrets.compare_digest(credentials.password, password)
     if not valid:
         raise HTTPException(status_code=401, detail="Invalid credentials", headers={"WWW-Authenticate": "Basic"})
