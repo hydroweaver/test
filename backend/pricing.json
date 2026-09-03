@@ -1,0 +1,20 @@
+{
+  "_comment": "USD price per 1,000,000 tokens. These are best-effort snapshots and WILL go stale - providers change pricing often. Verify against each provider's official pricing page before trusting cost numbers for anything real, and edit this file as needed: https://www.anthropic.com/pricing , https://openai.com/api/pricing , https://ai.google.dev/gemini-api/docs/pricing",
+
+  "anthropic": {
+    "claude-opus-5":    { "input": 5.00,  "output": 25.00 },
+    "claude-sonnet-5":  { "input": 2.00,  "output": 10.00 },
+    "claude-haiku-4-5": { "input": 1.00,  "output": 5.00 }
+  },
+
+  "openai": {
+    "gpt-5":       { "input": 1.25, "output": 10.00 },
+    "gpt-5-mini":  { "input": 0.25, "output": 2.00 },
+    "gpt-5-nano":  { "input": 0.05, "output": 0.40 }
+  },
+
+  "gemini": {
+    "gemini-3-pro":   { "input": 2.00, "output": 12.00 },
+    "gemini-3-flash": { "input": 0.30, "output": 2.50 }
+  }
+}

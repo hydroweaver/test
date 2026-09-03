@@ -1,0 +1,155 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Concierge admin</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.3rem; }
+  section { margin-bottom: 2rem; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
+  label { display: block; margin: 0.5rem 0 0.2rem; font-size: 0.85rem; color: #555; }
+  select, input, button { padding: 0.4rem; font-size: 0.9rem; }
+  button { cursor: pointer; margin-top: 0.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid #eee; white-space: nowrap; }
+  .totals { display: flex; gap: 1.5rem; margin-bottom: 0.5rem; font-size: 0.9rem; }
+  .totals b { font-size: 1.1rem; display: block; }
+  .row { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+  .provider { border: 1px solid #eee; border-radius: 6px; padding: 0.6rem; min-width: 220px; }
+  .ok { color: #0a7a2f; } .no { color: #b00020; }
+  .msg { font-size: 0.85rem; margin-top: 0.4rem; }
+</style>
+</head>
+<body>
+<h1>Concierge admin</h1>
+
+<section>
+  <h2>API keys</h2>
+  <div class="row" id="providers"></div>
+</section>
+
+<section>
+  <h2>Active model</h2>
+  <label>Provider</label>
+  <select id="active-provider"></select>
+  <label>Model</label>
+  <select id="active-model"></select>
+  <button onclick="saveSettings()">Save</button>
+  <div class="msg" id="settings-msg"></div>
+</section>
+
+<section>
+  <h2>Usage log</h2>
+  <div class="totals" id="totals"></div>
+  <table id="usage-table">
+    <thead><tr>
+      <th>Time</th><th>Channel</th><th>From</th><th>Provider</th><th>Model</th>
+      <th>In</th><th>Out</th><th>Total</th><th>Cost</th><th>Tools</th><th>Turns</th><th>ms</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button onclick="loadUsage()">Refresh</button>
+</section>
+
+<script>
+let currentSettings = null;
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+  return res.json();
+}
+
+async function loadSettings() {
+  currentSettings = await api('/admin/settings');
+  renderProviders();
+  renderModelPickers();
+}
+
+function renderProviders() {
+  const el = document.getElementById('providers');
+  el.innerHTML = '';
+  for (const [name, info] of Object.entries(currentSettings.providers)) {
+    const div = document.createElement('div');
+    div.className = 'provider';
+    div.innerHTML = `
+      <b>${name}</b><br>
+      <span class="${info.configured ? 'ok' : 'no'}">
+        ${info.configured ? 'configured (' + info.source + ', ' + info.masked + ')' : 'not configured'}
+      </span>
+      <label>Paste key</label>
+      <input type="password" id="key-${name}" placeholder="sk-...">
+      <button onclick="saveKey('${name}')">Save key</button>
+    `;
+    el.appendChild(div);
+  }
+}
+
+async function saveKey(provider) {
+  const input = document.getElementById('key-' + provider);
+  if (!input.value.trim()) return;
+  await api('/admin/keys', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({provider, api_key: input.value.trim()}),
+  });
+  input.value = '';
+  await loadSettings();
+}
+
+function renderModelPickers() {
+  const providerSel = document.getElementById('active-provider');
+  providerSel.innerHTML = Object.keys(currentSettings.providers)
+    .map(p => `<option value="${p}" ${p === currentSettings.active_provider ? 'selected' : ''}>${p}</option>`).join('');
+  providerSel.onchange = renderModelOptions;
+  renderModelOptions();
+}
+
+function renderModelOptions() {
+  const provider = document.getElementById('active-provider').value;
+  const models = currentSettings.providers[provider].priced_models;
+  const modelSel = document.getElementById('active-model');
+  modelSel.innerHTML = models.map(m =>
+    `<option value="${m}" ${m === currentSettings.active_model ? 'selected' : ''}>${m}</option>`).join('');
+}
+
+async function saveSettings() {
+  const provider = document.getElementById('active-provider').value;
+  const model = document.getElementById('active-model').value;
+  const msg = document.getElementById('settings-msg');
+  try {
+    await api('/admin/settings', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({provider, model}),
+    });
+    msg.textContent = 'Saved.';
+    await loadSettings();
+  } catch (e) {
+    msg.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function loadUsage() {
+  const data = await api('/admin/usage?limit=100');
+  const t = data.totals;
+  document.getElementById('totals').innerHTML = `
+    <div>Requests<b>${t.count}</b></div>
+    <div>Input tokens<b>${t.input_tokens}</b></div>
+    <div>Output tokens<b>${t.output_tokens}</b></div>
+    <div>Cost (USD)<b>$${(t.cost_usd || 0).toFixed(4)}</b></div>
+  `;
+  const tbody = document.querySelector('#usage-table tbody');
+  tbody.innerHTML = data.rows.map(r => `
+    <tr>
+      <td>${r.created_at}</td><td>${r.channel}</td><td>${r.phone_number || '[api]'}</td>
+      <td>${r.provider}</td><td>${r.model}</td>
+      <td>${r.input_tokens}</td><td>${r.output_tokens}</td><td>${r.total_tokens}</td>
+      <td>${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
+      <td>${r.tool_call_count}</td><td>${r.turn_count}</td><td>${r.latency_ms ?? '-'}</td>
+    </tr>`).join('');
+}
+
+loadSettings();
+loadUsage();
+</script>
+</body>
+</html>

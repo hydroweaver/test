@@ -1,0 +1,75 @@
+# WhatsApp concierge + multi-model token/cost tracker
+
+Answers WhatsApp messages (via Twilio) as a website concierge, using Claude, ChatGPT,
+or Gemini with a tool-calling loop over a one-time crawl of a target site. Every
+reply's exact token usage and cost land in a built-in `/admin` page, where you can
+also paste API keys and switch the active provider/model. This is a throwaway test
+rig for comparing token/cost across models, not a hardened product.
+
+## Fastest path: deploy to Railway
+
+1. Deploy this repo to Railway, with **root directory set to `backend`** (Railway
+   project → Settings → Root Directory) - that's where `requirements.txt` and the
+   `Procfile` live.
+2. Set at least one provider key as a Railway env var (`ANTHROPIC_API_KEY`,
+   `OPENAI_API_KEY`, or `GEMINI_API_KEY`) - or skip this and paste it into `/admin`
+   after deploying. Everything else has a working default; nothing else is required
+   to get the app up.
+3. Once deployed, visit `https://<your-app>.up.railway.app/admin` (login `admin`/
+   `admin` unless you set `ADMIN_USERNAME`/`ADMIN_PASSWORD`), confirm a provider shows
+   configured, and pick the active provider/model.
+4. Crawl the target site once so the bot has something to answer from:
+   `railway run python crawl.py https://www.example.com`
+5. For WhatsApp: set `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` and `PUBLIC_BASE_URL`
+   (your Railway URL) as env vars, then in the Twilio console point the WhatsApp
+   number's incoming-message webhook at `<your-railway-url>/webhook/whatsapp`.
+
+That's it - message the Twilio WhatsApp number and watch replies + token/cost show up
+in `/admin`. (Optional: attach a Railway Volume mounted at `/data` and set
+`DB_PATH=/data/app.db` if you want the usage log/crawled content to survive a
+redeploy - skip it for a quick test, nothing breaks either way.)
+
+## Running it locally instead
+
+```bash
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # add at least one provider key
+python crawl.py https://www.example.com --max-pages 30
+uvicorn app:app --reload
+```
+
+- `POST /chat` - direct testing, no WhatsApp needed.
+- `GET /admin` - paste keys, pick active provider/model, see the usage log.
+- `POST /webhook/whatsapp` - what Twilio calls (use `ngrok http 8000` to test this
+  locally, same as step 5 above but with the ngrok URL as `PUBLIC_BASE_URL`).
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "anthropic", "message": "What does this site offer?"}'
+```
+
+Returns the reply plus `usage` (exact tokens, summed across every tool-call turn),
+`cost_usd`, `tool_call_count`, and `turn_count`.
+
+## How the numbers work
+
+- **Token counts** come straight from each provider's own API response, summed across
+  every turn of the tool-calling loop (the model may call `search_website` more than
+  once before answering) - never estimated locally.
+- **Cost** is `tokens * price_per_million` from `pricing.json`. Provider pricing
+  drifts, especially OpenAI/Gemini - treat it as a starting point and edit that file
+  if a rate is off.
+- `tool_call_count` / `turn_count` on every logged row let you compare how much a
+  tool-using agent loop actually costs per reply, across providers.
+
+## Security note
+
+Built for quick personal testing, not production: `/admin` defaults to `admin`/`admin`
+if you don't set your own credentials, pasted keys are encrypted at rest but the
+encryption key auto-generates itself if you don't set one, and the WhatsApp webhook
+only checks Twilio's signature when `TWILIO_AUTH_TOKEN`+`PUBLIC_BASE_URL` are both
+set. Fine for a throwaway test; set real credentials before leaving this running
+anywhere someone else could find the URL.
