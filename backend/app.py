@@ -163,13 +163,23 @@ def serve_media(filename: str):
     return FileResponse(path)
 
 
+def _missing_send_config() -> list[str]:
+    """Which env vars are missing for sending replies via Twilio's API."""
+    return [
+        name for name, value in (
+            ("TWILIO_ACCOUNT_SID", os.environ.get("TWILIO_ACCOUNT_SID")),
+            ("TWILIO_AUTH_TOKEN", os.environ.get("TWILIO_AUTH_TOKEN")),
+            ("TWILIO_WHATSAPP_NUMBER", TWILIO_WHATSAPP_NUMBER),
+        ) if not value
+    ]
+
+
 def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> None:
     sid = os.environ.get("TWILIO_ACCOUNT_SID")
     token = os.environ.get("TWILIO_AUTH_TOKEN")
-    if not (sid and token and TWILIO_WHATSAPP_NUMBER):
-        raise RuntimeError(
-            "Async replies need TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER set."
-        )
+    missing = _missing_send_config()
+    if missing:
+        raise RuntimeError(f"Can't send reply - these env vars are not set: {', '.join(missing)}")
     client = TwilioClient(sid, token)
     urls = [u for u in (media.public_url(f) for f in media_files) if u]
     client.messages.create(
@@ -180,9 +190,13 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> None:
     )
 
 
-def _handle_message(from_number: str, body: str, image: dict | None, media_kind: str) -> None:
-    """Runs the agent and sends the reply. Called in the background so a slow
-    exchange (transcription + tool calls + speech) can't hit Twilio's webhook timeout."""
+def _handle_message(
+    from_number: str, body: str, image: dict | None, media_kind: str, send: bool = True
+) -> str:
+    """Runs the agent, logs the exchange, and (when `send`) delivers the reply via
+    Twilio's API. Normally called in the background so a slow exchange (transcription
+    + tool calls + speech) can't hit Twilio's webhook timeout. Returns the reply text
+    so the caller can deliver it inline instead when async sending isn't configured."""
     conversation_id = db.get_or_create_conversation(from_number)
     history = db.get_recent_messages(conversation_id, limit=10)
     settings = db.get_settings()
@@ -219,10 +233,11 @@ def _handle_message(from_number: str, body: str, image: dict | None, media_kind:
 
     # Send first, then write exactly one usage row for this exchange - one incoming
     # message, its one reply, and every token spent producing it.
-    try:
-        _send_whatsapp(from_number, reply_text, reply_media)
-    except Exception as e:
-        error = (error + " | " if error else "") + f"send failed: {e}"
+    if send:
+        try:
+            _send_whatsapp(from_number, reply_text, reply_media)
+        except Exception as e:
+            error = (error + " | " if error else "") + f"send failed: {e}"
 
     cost = calculate_cost(provider, model, result.input_tokens, result.output_tokens) if result else None
     try:
@@ -238,6 +253,8 @@ def _handle_message(from_number: str, body: str, image: dict | None, media_kind:
         )
     except Exception:
         pass  # a logging failure should never block the reply
+
+    return reply_text
 
 
 @app.post("/webhook/whatsapp")
@@ -282,6 +299,17 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
 
     if not body:
         raise HTTPException(status_code=400, detail="Nothing to reply to")
+
+    missing = _missing_send_config()
+    if missing:
+        # Can't send via Twilio's API, so answer inline instead of generating a reply
+        # nobody ever receives. Slower path (risks Twilio's ~15s timeout on long
+        # exchanges) and can't attach media - set the missing vars to get those back.
+        print(f"Replying inline; set {', '.join(missing)} for async replies with media.")
+        reply_text = _handle_message(from_number, body, image, media_kind, send=False)
+        twiml = MessagingResponse()
+        twiml.message(reply_text)
+        return Response(content=str(twiml), media_type="application/xml")
 
     # Ack Twilio immediately with empty TwiML; the real reply goes out via the API.
     background.add_task(_handle_message, from_number, body, image, media_kind)
