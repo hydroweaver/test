@@ -12,7 +12,7 @@ import db
 from providers import ProviderError
 from tools import TOOL_SCHEMAS, ToolBox
 
-MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "4"))
+MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "2"))
 
 
 class AgentResult(NamedTuple):
@@ -56,7 +56,7 @@ def _run_anthropic_agent(message, model, system, history, image, toolbox) -> Age
         force_text = turn == MAX_TOOL_TURNS
         response = client.messages.create(
             model=model,
-            max_tokens=2048,
+            max_tokens=600,
             system=system or anthropic.NOT_GIVEN,
             messages=messages,
             tools=[] if force_text else tools,
