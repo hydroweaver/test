@@ -62,7 +62,10 @@
   th { text-align: left; padding: .55rem .7rem; background: var(--bg); color: var(--muted); font-weight: 600;
        text-transform: uppercase; font-size: .68rem; letter-spacing: .03em; white-space: nowrap; position: sticky; top: 0; }
   td { padding: .55rem .7rem; border-top: 1px solid var(--border); white-space: nowrap; }
-  td.error-cell { color: var(--bad); white-space: normal; max-width: 280px; font-size: .76rem; }
+  td.error-cell { color: var(--bad); white-space: normal; max-width: 260px; font-size: .76rem; }
+  td.msg-cell { white-space: normal; max-width: 260px; min-width: 160px; font-size: .78rem; vertical-align: top; }
+  .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
+          padding: 0 .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; }
   tr:hover td { background: #fafafa; }
   .table-footer { display: flex; justify-content: space-between; align-items: center; margin-top: .9rem; }
 </style>
@@ -101,7 +104,7 @@
   <div class="table-wrap">
     <table id="usage-table">
       <thead><tr>
-        <th>Time</th><th>Channel</th><th>From</th><th>Provider</th><th>Model</th>
+        <th>Time</th><th>From</th><th>Message</th><th>Reply</th><th>Provider</th><th>Model</th>
         <th>In</th><th>Out</th><th>Total</th><th>Cost</th><th>Tools</th><th>Turns</th><th>ms</th><th>Error</th>
       </tr></thead>
       <tbody></tbody>
@@ -115,6 +118,14 @@
 
 <script>
 let currentSettings = null;
+
+// Message/reply text comes from WhatsApp users - escape it before it touches innerHTML.
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -208,13 +219,16 @@ async function loadUsage() {
   const tbody = document.querySelector('#usage-table tbody');
   tbody.innerHTML = data.rows.length ? data.rows.map(r => `
     <tr>
-      <td>${r.created_at}</td><td>${r.channel}</td><td>${r.phone_number || '[api]'}</td>
+      <td>${r.created_at}</td>
+      <td>${r.phone_number || '[api]'}${r.media_kind && r.media_kind !== 'text' ? ' <span class="kind">' + r.media_kind + '</span>' : ''}</td>
+      <td class="msg-cell">${esc(r.user_message)}</td>
+      <td class="msg-cell">${esc(r.reply_text)}</td>
       <td>${r.provider}</td><td>${r.model}</td>
       <td>${r.input_tokens}</td><td>${r.output_tokens}</td><td>${r.total_tokens}</td>
       <td>${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
       <td>${r.tool_call_count}</td><td>${r.turn_count}</td><td>${r.latency_ms ?? '-'}</td>
-      <td class="error-cell">${r.error || ''}</td>
-    </tr>`).join('') : `<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:1.2rem;">No requests yet.</td></tr>`;
+      <td class="error-cell">${esc(r.error)}</td>
+    </tr>`).join('') : `<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:1.2rem;">No requests yet.</td></tr>`;
   usageMsg.textContent = `Updated ${new Date().toLocaleTimeString()}`;
 }
 

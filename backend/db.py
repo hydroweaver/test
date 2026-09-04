@@ -83,7 +83,52 @@ CREATE TABLE IF NOT EXISTS provider_keys (
     encrypted_key BLOB NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Toy CRM the bot makes tool calls against, to simulate a real support scenario.
+CREATE TABLE IF NOT EXISTS crm_customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    plan TEXT NOT NULL,
+    customer_since TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS crm_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    price_usd REAL NOT NULL,
+    description TEXT NOT NULL,
+    image_file TEXT
+);
+
+CREATE TABLE IF NOT EXISTS crm_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number TEXT UNIQUE NOT NULL,
+    phone_number TEXT NOT NULL,
+    sku TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    eta TEXT
+);
+
+CREATE TABLE IF NOT EXISTS crm_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_number TEXT UNIQUE NOT NULL,
+    phone_number TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
+
+# Columns added after the first deploy - applied in place so existing databases
+# (with real usage rows already in them) migrate instead of needing a reset.
+MIGRATIONS = [
+    ("usage_log", "user_message", "TEXT"),
+    ("usage_log", "reply_text", "TEXT"),
+    ("usage_log", "media_kind", "TEXT"),
+]
 
 
 @contextmanager
@@ -110,6 +155,11 @@ def init_db(default_provider: str, default_model: str) -> None:
                 "This SQLite build lacks FTS5 support, required for website search. "
                 "Rebuild Python with a modern SQLite, or install one that has FTS5."
             ) from e
+
+        for table, column, coltype in MIGRATIONS:
+            existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
         row = conn.execute("SELECT 1 FROM settings WHERE id = 1").fetchone()
         if row is None:
@@ -247,13 +297,18 @@ def log_usage(
     phone_number: str | None = None,
     latency_ms: int | None = None,
     error: str | None = None,
+    user_message: str | None = None,
+    reply_text: str | None = None,
+    media_kind: str | None = None,
 ) -> None:
+    """One row per exchange: exactly one incoming message and the reply it produced,
+    with every token spent in between (including tool-call turns) counted against it."""
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO usage_log "
             "(channel, phone_number, provider, model, input_tokens, output_tokens, total_tokens, "
-            " cost_usd, tool_call_count, turn_count, latency_ms, error) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " cost_usd, tool_call_count, turn_count, latency_ms, error, user_message, reply_text, media_kind) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 channel,
                 phone_number,
@@ -267,6 +322,9 @@ def log_usage(
                 turn_count,
                 latency_ms,
                 error,
+                user_message,
+                reply_text,
+                media_kind,
             ),
         )
 
@@ -275,7 +333,8 @@ def get_usage(limit: int = 50, offset: int = 0) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT id, created_at, channel, phone_number, provider, model, input_tokens, "
-            "output_tokens, total_tokens, cost_usd, tool_call_count, turn_count, latency_ms, error "
+            "output_tokens, total_tokens, cost_usd, tool_call_count, turn_count, latency_ms, error, "
+            "user_message, reply_text, media_kind "
             "FROM usage_log ORDER BY id DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
