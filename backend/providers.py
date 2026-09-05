@@ -72,8 +72,12 @@ def gemini_client(api_key: str):
     return _clients[api_key]
 
 
-def _gemini_models(api_key: str) -> list[str]:
-    out = []
+def _gemini_models(api_key: str) -> tuple[list[str], dict[str, bool]]:
+    """Returns model IDs plus, per model, whether it's a "thinking" model - Gemini's
+    own flag for whether it reasons before replying (slower, and billed for it) or
+    answers directly. Surfaced in the admin dropdown so a fast/cheap pick is obvious
+    without guessing from the name."""
+    out, thinking = [], {}
     for m in gemini_client(api_key).models.list():
         actions = getattr(m, "supported_actions", None) or []
         if actions and "generateContent" not in actions:
@@ -81,7 +85,9 @@ def _gemini_models(api_key: str) -> list[str]:
         name = (getattr(m, "name", "") or "").removeprefix("models/")
         if name and "embedding" not in name and "aqa" not in name:
             out.append(name)
-    return sorted(set(out), reverse=True)
+            thinking[name] = bool(getattr(m, "thinking", False))
+    names = sorted(set(out), reverse=True)
+    return names, thinking
 
 
 def list_models(provider: str) -> dict:
@@ -96,12 +102,15 @@ def list_models(provider: str) -> dict:
         return cached[1]
 
     api_key = db.resolve_api_key(provider)
-    models, live, note = [], False, ""
+    models, live, note, thinking = [], False, "", {}
     if not api_key:
         note = f"Add a {provider} key to load the full model list from their API."
     else:
         try:
-            models = _openai_models(api_key) if provider == "openai" else _gemini_models(api_key)
+            if provider == "openai":
+                models = _openai_models(api_key)
+            else:
+                models, thinking = _gemini_models(api_key)
             live = bool(models)
         except Exception as e:
             note = f"Couldn't reach {provider} to list models: {e}"
@@ -111,6 +120,6 @@ def list_models(provider: str) -> dict:
         models = FALLBACK_MODELS.get(provider, [])
         note = note or f"Showing a fallback list - {provider} returned nothing."
 
-    result = {"models": models, "live": live, "note": note}
+    result = {"models": models, "live": live, "note": note, "thinking": thinking}
     _cache[provider] = (time.time(), result)
     return result

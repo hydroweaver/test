@@ -149,12 +149,16 @@ function renderModelSelect() {
     // inheriting their base model's rates).
     const unpriced = new Set(live.unpriced || []);
     const priced = { has: m => !unpriced.has(m) };
+    // Gemini reports per-model whether it reasons before replying (slower, billed for
+    // it) - flag that inline so a fast/cheap pick doesn't need guessing from the name.
+    const thinking = live.thinking || {};
     html += `<optgroup label="${esc(provider)}${
       live.live ? ' — ' + models.length + ' models' : (live.note ? ' (partial list)' : ' …')}">` +
       models.map(m => {
         const val = `${provider}|${m}`;
+        const tag = m in thinking ? (thinking[m] ? ' 🧠 thinking' : ' ⚡ fast') : '';
         return `<option value="${esc(val)}" ${val === active ? 'selected' : ''}>${
-          esc(provider)} / ${esc(m)}${priced.has(m) ? '' : ' — no pricing'}</option>`;
+          esc(provider)} / ${esc(m)}${tag}${priced.has(m) ? '' : ' — no pricing'}</option>`;
       }).join('') + '</optgroup>';
   }
   sel.innerHTML = html;
