@@ -85,6 +85,7 @@
   <select id="model-select" title="Provider and model"></select>
   <button id="save-model" onclick="saveSettings(this)">Set active</button>
   <button class="secondary" onclick="loadUsage()">Refresh</button>
+  <button class="secondary" onclick="testWhatsApp(this)">Test WhatsApp</button>
   <form method="post" action="/admin/logout" style="display:inline"><button class="secondary" type="submit">Log out</button></form>
   <span class="bar-msg" id="keys-status"></span>
   <span class="bar-msg" id="bar-msg"></span>
@@ -112,6 +113,32 @@ function esc(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => (
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Sends one real message through Twilio and reports what Twilio said back. The
+// usage log can only show that we tried; this shows why it didn't arrive.
+async function testWhatsApp(btn) {
+  const to = prompt('Send a test WhatsApp to which number?\n\nFull international format, e.g. +32477874767');
+  if (!to) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const r = await api('/admin/twilio-test', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({to: to}),
+    });
+    if (r.ok) {
+      barMsg(`Twilio accepted it (${r.message_sid}). ${r.note}`);
+    } else {
+      barMsg(`${r.error}${r.hint ? ' — ' + r.hint : ''}`, true);
+    }
+  } catch (e) {
+    barMsg('Test failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
 function barMsg(text, isError) {

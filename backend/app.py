@@ -183,6 +183,20 @@ def _missing_send_config() -> list[str]:
 
 WHATSAPP_MAX_CHARS = 1500  # Twilio rejects WhatsApp bodies over 1600
 
+# The handful of Twilio error codes that actually explain a silently undelivered
+# WhatsApp reply, in plain English.
+TWILIO_ERROR_HINTS = {
+    20003: "Authentication failed - TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is wrong.",
+    21606: "TWILIO_WHATSAPP_NUMBER isn't a WhatsApp-enabled sender on this account. "
+           "For the sandbox it must be +14155238886.",
+    21608: "That number hasn't joined your WhatsApp sandbox. Send the 'join <code>' "
+           "message to the sandbox number again - the join expires after 72 hours.",
+    21610: "That number unsubscribed (replied STOP).",
+    63007: "No WhatsApp sender found for TWILIO_WHATSAPP_NUMBER on this account.",
+    63016: "Outside the 24-hour customer service window - free-form messages are only "
+           "allowed within 24h of their last message. Message the bot, then retry.",
+}
+
 
 def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
     """Sends the reply, returning the Twilio message SIDs so a successful send is
@@ -516,6 +530,41 @@ def admin_update_settings(req: SettingsUpdate):
 @admin_router.get("/usage")
 def admin_usage(limit: int = 50, offset: int = 0):
     return db.get_usage(limit, offset)
+
+
+class WhatsAppTest(BaseModel):
+    to: str
+
+
+@admin_router.post("/twilio-test")
+def admin_twilio_test(req: WhatsAppTest):
+    """Sends one test WhatsApp message and reports exactly what Twilio said.
+
+    Delivery failures are otherwise invisible from the outside: the reply is
+    generated and logged here while Twilio rejects it for a reason only their API
+    response carries. This surfaces that reason (and their error code, which is the
+    actual diagnosis) instead of leaving you guessing.
+    """
+    missing = _missing_send_config()
+    if missing:
+        return {"ok": False, "stage": "config",
+                "error": f"Not set in the environment: {', '.join(missing)}",
+                "hint": "Add them in Railway, then redeploy - env changes need a new deploy."}
+
+    to = req.to.strip()
+    if not to.startswith("+"):
+        return {"ok": False, "stage": "input",
+                "error": f"'{to}' needs to be in full international format, e.g. +32477874767."}
+
+    try:
+        sid = _send_whatsapp(to, "Test message from your admin page ✅", [])
+        return {"ok": True, "stage": "sent", "message_sid": sid,
+                "note": "Twilio accepted it. If it doesn't arrive, the number hasn't "
+                        "joined the WhatsApp sandbox (or its 72-hour join expired)."}
+    except Exception as e:
+        code = getattr(e, "code", None)
+        return {"ok": False, "stage": "twilio", "error": str(e),
+                "twilio_code": code, "hint": TWILIO_ERROR_HINTS.get(code, "")}
 
 
 app.include_router(admin_router)
