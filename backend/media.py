@@ -22,8 +22,18 @@ TTS_MODEL = os.environ.get("TTS_MODEL", "gpt-4o-mini-tts")
 TTS_VOICE = os.environ.get("TTS_VOICE", "alloy")
 
 
+# Learned from the last incoming webhook, so reply media keeps working after the app
+# is renamed (which changes the domain) even if PUBLIC_BASE_URL still points at the old one.
+_observed_base_url: str | None = None
+
+
+def remember_base_url(url: str) -> None:
+    global _observed_base_url
+    _observed_base_url = url.rstrip("/")
+
+
 def public_url(filename: str) -> str | None:
-    base = os.environ.get("PUBLIC_BASE_URL")
+    base = os.environ.get("PUBLIC_BASE_URL") or _observed_base_url
     return f"{base.rstrip('/')}/media/{filename}" if base else None
 
 

@@ -267,12 +267,17 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
     form = await request.form()
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
     public_base_url = os.environ.get("PUBLIC_BASE_URL")
-    if auth_token and public_base_url:
+    # Signature checking is OFF by default - it depends on the exact URL, so renaming
+    # the app silently 403s everything. Set VERIFY_TWILIO_SIGNATURE=1 to turn it on.
+    if os.environ.get("VERIFY_TWILIO_SIGNATURE") == "1" and auth_token and public_base_url:
         validator = RequestValidator(auth_token)
         url = public_base_url.rstrip("/") + "/webhook/whatsapp"
-        signature = request.headers.get("X-Twilio-Signature", "")
-        if not validator.validate(url, dict(form), signature):
-            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+        if not validator.validate(url, dict(form), request.headers.get("X-Twilio-Signature", "")):
+            raise HTTPException(status_code=403, detail=f"Bad Twilio signature (checked against {url})")
+
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if host:
+        media.remember_base_url(f"{request.headers.get('x-forwarded-proto', 'https')}://{host}")
 
     from_number = form.get("From", "").removeprefix("whatsapp:")
     body = form.get("Body", "") or ""
