@@ -28,13 +28,23 @@ DEFAULT_MODELS = {
     "gemini": os.environ.get("GEMINI_DEFAULT_MODEL", "gemini-3-flash"),
 }
 COMPANY_NAME = os.environ.get("COMPANY_NAME", "the company")
-WHATSAPP_SYSTEM_PROMPT = (
-    f"You're the WhatsApp concierge for {COMPANY_NAME}. Warm, quick, genuinely useful.\n"
-    "Keep replies SHORT - 1-3 sentences. Use a few emojis and *bold* for key facts "
-    "(prices, order numbers, statuses). Offer choices as a short numbered list.\n"
-    "Use the tools for anything about their account, orders or products - never invent "
-    "order numbers, prices or statuses. If a tool returns nothing useful, say so."
-)
+
+
+def _load_system_prompt() -> str:
+    """The bot's instructions live in system_prompt.txt so they can be edited (and
+    resized, to see the cost impact) without touching code. Lines starting with
+    '> ' are editor notes and are stripped before sending."""
+    path = os.path.join(os.path.dirname(__file__), "system_prompt.txt")
+    try:
+        with open(path) as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return f"You are the WhatsApp concierge for {COMPANY_NAME}. Be brief and helpful."
+    body = "\n".join(l for l in raw.splitlines() if not l.startswith("> ") and l.strip() != ">")
+    return body.strip().replace("{company}", COMPANY_NAME)
+
+
+WHATSAPP_SYSTEM_PROMPT = _load_system_prompt()
 
 TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER", "")
 
