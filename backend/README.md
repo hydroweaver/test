@@ -102,3 +102,10 @@ Built for quick personal testing, not production: `/admin` defaults to `admin`/`
 if you don't set your own credentials, and the WhatsApp webhook only checks Twilio's
 signature when you opt in with `VERIFY_TWILIO_SIGNATURE=1`. Fine for a throwaway test; set real credentials before leaving this running
 anywhere someone else could find the URL.
+
+`/admin` logs in with a form and a signed session cookie (HttpOnly, SameSite=Lax,
+`Secure` over HTTPS), valid 7 days. The cookie is signed with a secret derived from
+`ADMIN_PASSWORD`, so changing the password logs every session out; set
+`ADMIN_SESSION_SECRET` if you'd rather it were independent. Note this only changes
+*how* the password is transmitted and stored - the protection is still one shared
+password, so the thing that actually matters is setting a strong `ADMIN_PASSWORD`.

@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Concierge admin</title>
 <style>
   :root {
@@ -51,6 +52,30 @@
   .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
           padding: 0 .3rem; font-size: .62rem; font-weight: 700; text-transform: uppercase; }
 
+  /* Phone layout: a 7-column table is unreadable on a 390px screen, so each row
+     becomes its own card with the column name printed against each value. */
+  @media (max-width: 720px) {
+    .topbar { padding: .6rem .9rem; gap: .5rem; }
+    .brand { width: 100%; margin-right: 0; }
+    select { min-width: 0; flex: 1 1 100%; font-size: 16px; } /* 16px stops iOS zooming on focus */
+    .topbar button { flex: 1 1 auto; }
+    .bar-msg { width: 100%; }
+    main { padding: .9rem .9rem 3rem; }
+
+    table, thead, tbody, tr, td { display: block; width: 100%; }
+    table { border: none; background: none; table-layout: auto; }
+    thead { display: none; }
+    colgroup { display: none; }
+    tr { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+         margin-bottom: .7rem; padding: .3rem .1rem; }
+    td { border-top: none; padding: .3rem .7rem; display: flex; gap: .6rem; }
+    td::before { content: attr(data-label); flex: 0 0 4.2rem; color: var(--muted);
+                 font-size: .64rem; text-transform: uppercase; letter-spacing: .03em;
+                 font-weight: 600; padding-top: .15rem; }
+    td.msg-cell { flex-direction: column; align-items: flex-start; gap: .15rem; }
+    td.msg-cell::before { flex: none; }
+  }
+
 </style>
 </head>
 <body>
@@ -60,6 +85,7 @@
   <select id="model-select" title="Provider and model"></select>
   <button id="save-model" onclick="saveSettings(this)">Set active</button>
   <button class="secondary" onclick="loadUsage()">Refresh</button>
+  <form method="post" action="/admin/logout" style="display:inline"><button class="secondary" type="submit">Log out</button></form>
   <span class="bar-msg" id="keys-status"></span>
   <span class="bar-msg" id="bar-msg"></span>
 </div>
@@ -97,6 +123,10 @@ function barMsg(text, isError) {
 async function api(path, opts) {
   const res = await fetch(path, opts);
   const text = await res.text();
+  if (res.status === 401) {   // session expired - back to the login form
+    window.location = '/admin/login';
+    throw new Error('Not logged in');
+  }
   if (!res.ok) {
     // Errors aren't always JSON - a 500 or a proxy error returns HTML, and
     // blindly parsing it hid the real status behind a JSON parse error.
@@ -199,17 +229,17 @@ async function loadUsage() {
   const rows = [...data.rows].reverse();
   document.querySelector('#usage-table tbody').innerHTML = rows.length ? rows.map(r => `
     <tr>
-      <td class="dim">${esc(r.created_at).slice(5, 16)}<br><span class="tiny">${esc(r.phone_number) || '[api]'}</span></td>
-      <td class="msg-cell">${esc(r.user_message)}${
+      <td class="dim" data-label="Time">${esc(r.created_at).slice(5, 16)}<br><span class="tiny">${esc(r.phone_number) || '[api]'}</span></td>
+      <td class="msg-cell" data-label="Message">${esc(r.user_message)}${
         r.media_kind && r.media_kind !== 'text' ? ' <span class="kind">' + esc(r.media_kind) + '</span>' : ''}</td>
-      <td class="msg-cell">${esc(r.reply_text)}${
+      <td class="msg-cell" data-label="Reply">${esc(r.reply_text)}${
         r.error ? '<div class="' + (String(r.error).startsWith('sent') ? 'sent' : 'err') + '">'
                   + esc(r.error) + '</div>' : ''}</td>
-      <td class="dim">${esc(r.model)}<br><span class="tiny">${r.tool_call_count} tools · ${r.turn_count} turns · ${
+      <td class="dim" data-label="Model">${esc(r.model)}<br><span class="tiny">${r.tool_call_count} tools · ${r.turn_count} turns · ${
         r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + 's' : '-'}</span></td>
-      <td>${r.input_tokens}${r.cache_read_tokens ? '<br><span class="cached">+' + r.cache_read_tokens + ' cached</span>' : ''}</td>
-      <td>${r.output_tokens}</td>
-      <td>${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
+      <td data-label="In">${r.input_tokens}${r.cache_read_tokens ? '<br><span class="cached">+' + r.cache_read_tokens + ' cached</span>' : ''}</td>
+      <td data-label="Out">${r.output_tokens}</td>
+      <td data-label="Cost">${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
     </tr>`).join('')
     : `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem;">No replies yet.</td></tr>`;
   barMsg(`Updated ${new Date().toLocaleTimeString()}`);

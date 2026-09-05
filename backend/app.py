@@ -1,11 +1,12 @@
+import hashlib
+import hmac
 import os
 import secrets
 import time
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from twilio.request_validator import RequestValidator
@@ -352,31 +353,108 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
 
 
 # ---------------------------------------------------------------------------
-# Admin UI (Basic Auth)
+# Admin UI (cookie session)
 # ---------------------------------------------------------------------------
+# A signed cookie rather than HTTP Basic: Basic makes the browser throw its own
+# password dialog, which can't be styled or dismissed, and resends the password on
+# every single request. Here the password is sent once, to the login form.
 
-security = HTTPBasic()
+SESSION_COOKIE = "admin_session"
+SESSION_TTL_S = 7 * 24 * 3600
 
 
-def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
+def _admin_credentials() -> tuple[str, str]:
     # Defaults to admin/admin if you don't set these - fine for a quick throwaway
     # test, but set your own ADMIN_USERNAME/ADMIN_PASSWORD before sharing the URL.
-    username = os.environ.get("ADMIN_USERNAME", "admin")
-    password = os.environ.get("ADMIN_PASSWORD", "admin")
-    valid = secrets.compare_digest(credentials.username, username) & secrets.compare_digest(credentials.password, password)
-    if not valid:
-        raise HTTPException(status_code=401, detail="Invalid credentials", headers={"WWW-Authenticate": "Basic"})
+    return os.environ.get("ADMIN_USERNAME", "admin"), os.environ.get("ADMIN_PASSWORD", "admin")
+
+
+def _session_secret() -> bytes:
+    """Derived from the password unless ADMIN_SESSION_SECRET is set, so changing the
+    password automatically invalidates every session already handed out."""
+    user, password = _admin_credentials()
+    raw = os.environ.get("ADMIN_SESSION_SECRET") or f"{user}:{password}"
+    return hashlib.sha256(raw.encode()).digest()
+
+
+def _sign(expires_at: int) -> str:
+    return hmac.new(_session_secret(), str(expires_at).encode(), hashlib.sha256).hexdigest()
+
+
+def _issue_session() -> str:
+    expires_at = int(time.time()) + SESSION_TTL_S
+    return f"{expires_at}.{_sign(expires_at)}"
+
+
+def _session_valid(token: str | None) -> bool:
+    if not token or "." not in token:
+        return False
+    expires_at, _, signature = token.partition(".")
+    if not expires_at.isdigit() or not hmac.compare_digest(signature, _sign(int(expires_at))):
+        return False
+    return int(expires_at) > time.time()
+
+
+def _logged_in(request: Request) -> bool:
+    return _session_valid(request.cookies.get(SESSION_COOKIE))
+
+
+def require_admin(request: Request):
+    """API guard. Returns a plain 401 with NO WWW-Authenticate header - that header is
+    the entire reason a browser pops up its own login box."""
+    if not _logged_in(request):
+        raise HTTPException(status_code=401, detail="Not logged in")
     return True
 
 
-admin_router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
+LOGIN_REDIRECT = "/admin/login"
 
 
-@admin_router.get("", response_class=HTMLResponse)
-def admin_page():
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    if not _logged_in(request):
+        return RedirectResponse(LOGIN_REDIRECT, status_code=303)
     path = os.path.join(os.path.dirname(__file__), "admin", "index.html")
     with open(path) as f:
-        return f.read()
+        return HTMLResponse(f.read())
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+def admin_login_page(request: Request, error: int = 0):
+    if _logged_in(request):
+        return RedirectResponse("/admin", status_code=303)
+    path = os.path.join(os.path.dirname(__file__), "admin", "login.html")
+    with open(path) as f:
+        html = f.read()
+    return HTMLResponse(html.replace("{{ERROR}}", "Wrong username or password." if error else ""))
+
+
+@app.post("/admin/login")
+async def admin_login(request: Request):
+    form = await request.form()
+    user, password = _admin_credentials()
+    ok = secrets.compare_digest(str(form.get("username", "")), user) & \
+        secrets.compare_digest(str(form.get("password", "")), password)
+    if not ok:
+        return RedirectResponse(f"{LOGIN_REDIRECT}?error=1", status_code=303)
+
+    response = RedirectResponse("/admin", status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE, _issue_session(), max_age=SESSION_TTL_S, httponly=True, samesite="lax",
+        # Railway terminates TLS upstream, so trust the proxy header for this.
+        secure=request.headers.get("x-forwarded-proto", request.url.scheme) == "https",
+    )
+    return response
+
+
+@app.post("/admin/logout")
+def admin_logout():
+    response = RedirectResponse(LOGIN_REDIRECT, status_code=303)
+    response.delete_cookie(SESSION_COOKIE)
+    return response
+
+
+admin_router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
 
 @admin_router.get("/settings")
