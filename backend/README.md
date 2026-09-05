@@ -3,7 +3,7 @@
 Answers WhatsApp messages (via Twilio) as a website concierge, using Claude, ChatGPT,
 or Gemini with a tool-calling loop over a one-time crawl of a target site plus a toy
 CRM. Every reply's exact token usage and cost land in a built-in `/admin` page, where
-you can also paste API keys and switch the active provider/model. This is a throwaway
+you can switch the active provider/model. This is a throwaway
 test rig for comparing token/cost across models, not a hardened product.
 
 **What the bot can do**
@@ -32,20 +32,20 @@ turns) counted against it - so per-reply cost is directly comparable.
    `Procfile` live.
 2. Set at least one provider key as a Railway env var (`OPENAI_API_KEY`
    or `GEMINI_API_KEY`). These are the only way keys are supplied.
-   after deploying. Everything else has a working default; nothing else is required
-   to get the app up.
 3. Once deployed, visit `https://<your-app>.up.railway.app/admin` (login `admin`/
    `admin` unless you set `ADMIN_USERNAME`/`ADMIN_PASSWORD`), confirm a provider shows
    configured, and pick the active provider/model.
 4. Crawl the target site once so the bot has something to answer from:
    `railway run python crawl.py https://www.example.com`
-5. For WhatsApp, set these env vars: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+5. For WhatsApp, set these env vars - **all four matter**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
    `TWILIO_WHATSAPP_NUMBER` (the sandbox number is `+14155238886`) and
    `PUBLIC_BASE_URL` (your Railway URL). Then in the Twilio console point the WhatsApp
    number's incoming-message webhook at `<your-railway-url>/webhook/whatsapp`.
-   All four matter: replies are sent asynchronously through Twilio's API (so slow
-   exchanges can't hit the webhook timeout), and images/voice notes are fetched by
-   Twilio from `PUBLIC_BASE_URL/media/...`.
+   Without `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` the bot falls back to replying
+   inline in the webhook response. That works with no credentials at all, but Twilio
+   drops any reply that takes longer than ~15s - so a slow model's answers are
+   generated, billed, and never delivered (the usage log flags this). Those two
+   credentials are also what lets the bot fetch incoming images and voice notes.
 
 That's it - message the Twilio WhatsApp number and watch replies + token/cost show up
 in `/admin`. (Optional: attach a Railway Volume mounted at `/data` and set
@@ -64,7 +64,7 @@ uvicorn app:app --reload
 ```
 
 - `POST /chat` - direct testing, no WhatsApp needed.
-- `GET /admin` - paste keys, pick active provider/model, see the usage log.
+- `GET /admin` - pick active provider/model, see the usage log.
 - `POST /webhook/whatsapp` - what Twilio calls (use `ngrok http 8000` to test this
   locally, same as step 5 above but with the ngrok URL as `PUBLIC_BASE_URL`).
 
@@ -91,8 +91,6 @@ Returns the reply plus `usage` (exact tokens, summed across every tool-call turn
 ## Security note
 
 Built for quick personal testing, not production: `/admin` defaults to `admin`/`admin`
-if you don't set your own credentials, pasted keys are encrypted at rest but the
-encryption key auto-generates itself if you don't set one, and the WhatsApp webhook
-only checks Twilio's signature when `TWILIO_AUTH_TOKEN`+`PUBLIC_BASE_URL` are both
-set. Fine for a throwaway test; set real credentials before leaving this running
+if you don't set your own credentials, and the WhatsApp webhook only checks Twilio's
+signature when you opt in with `VERIFY_TWILIO_SIGNATURE=1`. Fine for a throwaway test; set real credentials before leaving this running
 anywhere someone else could find the URL.
