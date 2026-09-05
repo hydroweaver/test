@@ -339,22 +339,17 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
     if not body:
         raise HTTPException(status_code=400, detail="Nothing to reply to")
 
+    # ONE delivery path, always. There used to be a fallback that replied inline when
+    # Twilio send config was missing, but an inline reply has to beat Twilio's ~15s
+    # webhook timeout - so a fast model's replies arrived and a slow model's silently
+    # vanished. Same code, different outcome, depending on how quick the model was.
+    # That race is worse than a clear failure: now we always ack immediately and send
+    # via the API, so delivery either succeeds (SID in the row) or fails loudly.
     missing = _missing_send_config()
     if missing:
-        # Can't send via Twilio's API, so answer inline instead of generating a reply
-        # nobody ever receives. Slower path (risks Twilio's ~15s timeout on long
-        # exchanges) and can't attach media - set the missing vars to get those back.
-        note = (f"replied INLINE - not set: {', '.join(missing)}. Twilio drops inline "
-                f"replies slower than ~15s, and media can't be attached.")
-        if media_error:
-            note = media_error + " | " + note
-        print(note)
-        reply_text = _handle_message(from_number, body, image, media_kind, send=False, note=note)
-        twiml = MessagingResponse()
-        twiml.message(reply_text)
-        return Response(content=str(twiml), media_type="application/xml")
+        print(f"CANNOT SEND REPLIES: {', '.join(missing)} not set. "
+              f"The reply will be generated and logged but not delivered.")
 
-    # Ack Twilio immediately with empty TwiML; the real reply goes out via the API.
     background.add_task(_handle_message, from_number, body, image, media_kind, True, media_error)
     return Response(content=str(MessagingResponse()), media_type="application/xml")
 
