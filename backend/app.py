@@ -92,7 +92,22 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    """Deliberately unauthenticated, and deliberately booleans only - no keys, no
+    numbers, nothing secret. Its job is to answer "is THIS the instance my Twilio
+    webhook is hitting, and does it have what it needs?", which is impossible to
+    tell from the outside when several Railway services/environments look alike.
+    """
+    settings = db.get_settings()
+    return {
+        "status": "ok",
+        "company": COMPANY_NAME,
+        "active_provider": settings["active_provider"],
+        "active_model": settings["active_model"],
+        "provider_key_configured": {p: bool(db.resolve_api_key(p)) for p in PROVIDERS},
+        "twilio_ready": not _missing_send_config(),
+        "twilio_missing": _missing_send_config(),
+        "exchanges_logged": db.get_usage(1)["totals"]["count"],
+    }
 
 
 @app.get("/models")
