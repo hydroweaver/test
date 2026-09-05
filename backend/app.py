@@ -174,20 +174,37 @@ def _missing_send_config() -> list[str]:
     ]
 
 
-def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> None:
+WHATSAPP_MAX_CHARS = 1500  # Twilio rejects WhatsApp bodies over 1600
+
+
+def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
+    """Sends the reply, returning the Twilio message SIDs so a successful send is
+    provable. Long replies are split - Twilio rejects the whole message otherwise,
+    which is how a reply ends up in the log but never on the phone."""
     sid = os.environ.get("TWILIO_ACCOUNT_SID")
     token = os.environ.get("TWILIO_AUTH_TOKEN")
     missing = _missing_send_config()
     if missing:
         raise RuntimeError(f"Can't send reply - these env vars are not set: {', '.join(missing)}")
+
+    body = (body or "").strip()
+    if not body and not media_files:
+        # An empty body is rejected by Twilio, so the customer would get silence.
+        body = "Sorry, I couldn't put together an answer for that. Try rephrasing? 🙏"
+
+    chunks = [body[i:i + WHATSAPP_MAX_CHARS] for i in range(0, len(body), WHATSAPP_MAX_CHARS)] or [""]
     client = TwilioClient(sid, token)
     urls = [u for u in (media.public_url(f) for f in media_files) if u]
-    client.messages.create(
-        from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER.removeprefix('whatsapp:')}",
-        to=f"whatsapp:{to_number}",
-        body=body or "",
-        media_url=urls or None,
-    )
+    sids = []
+    for i, chunk in enumerate(chunks):
+        msg = client.messages.create(
+            from_=f"whatsapp:{TWILIO_WHATSAPP_NUMBER.removeprefix('whatsapp:')}",
+            to=f"whatsapp:{to_number}",
+            body=chunk,
+            media_url=(urls or None) if i == len(chunks) - 1 else None,  # media on the last part
+        )
+        sids.append(msg.sid)
+    return ",".join(sids)
 
 
 def _handle_message(
@@ -235,7 +252,10 @@ def _handle_message(
     # message, its one reply, and every token spent producing it.
     if send:
         try:
-            _send_whatsapp(from_number, reply_text, reply_media)
+            sids = _send_whatsapp(from_number, reply_text, reply_media)
+            # Record the Twilio SIDs so "logged but never arrived" is diagnosable:
+            # no SID here means we never handed it to Twilio at all.
+            error = (error + " | " if error else "") + f"sent ✓ {sids}"
         except Exception as e:
             error = (error + " | " if error else "") + f"send failed: {e}"
 

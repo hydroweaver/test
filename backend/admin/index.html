@@ -67,6 +67,7 @@
   .tiny { font-size: .68rem; color: var(--muted); }
   .err { color: var(--bad); font-size: .72rem; margin-top: .25rem; white-space: normal; }
   .cached { color: var(--good); font-size: .66rem; }
+  .sent { color: var(--good); font-size: .68rem; margin-top: .25rem; white-space: normal; }
   .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
           padding: 0 .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; }
   tr:hover td { background: #fafafa; }
@@ -240,7 +241,8 @@ async function loadUsage() {
       <td class="msg-cell">${esc(r.user_message)}${
         r.media_kind && r.media_kind !== 'text' ? ' <span class="kind">' + esc(r.media_kind) + '</span>' : ''}</td>
       <td class="msg-cell">${esc(r.reply_text)}${
-        r.error ? '<div class="err">' + esc(r.error) + '</div>' : ''}</td>
+        r.error ? '<div class="' + (String(r.error).startsWith('sent') ? 'sent' : 'err') + '">'
+                  + esc(r.error) + '</div>' : ''}</td>
       <td class="dim">${esc(r.model)}<br><span class="tiny">${r.tool_call_count} tools · ${r.turn_count} turns · ${
         r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + 's' : '-'}</span></td>
       <td>${r.input_tokens}${r.cache_read_tokens ? '<br><span class="cached">+' + r.cache_read_tokens + ' cached</span>' : ''}</td>
