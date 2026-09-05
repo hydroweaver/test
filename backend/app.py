@@ -209,7 +209,8 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
 
 
 def _handle_message(
-    from_number: str, body: str, image: dict | None, media_kind: str, send: bool = True
+    from_number: str, body: str, image: dict | None, media_kind: str, send: bool = True,
+    note: str | None = None,
 ) -> str:
     """Runs the agent, logs the exchange, and (when `send`) delivers the reply via
     Twilio's API. Normally called in the background so a slow exchange (transcription
@@ -222,7 +223,7 @@ def _handle_message(
 
     start = time.time()
     result = None
-    error = None
+    error = note
     try:
         result = run_agent(
             provider, body, model, WHATSAPP_SYSTEM_PROMPT, history,
@@ -231,7 +232,9 @@ def _handle_message(
         reply_text = result.reply
     except Exception as e:
         reply_text = "Sorry, I'm temporarily unavailable. Please try again shortly. 🙏"
-        error = str(e)
+        # Append, don't replace: `note` carries how the reply is being delivered and
+        # any media failure, which is often the more useful half of the diagnosis.
+        error = f"{error} | {e}" if error else str(e)
 
     reply_media = list(result.media_files) if result else []
     # Mirror the medium: a voice note gets a voice note back.
@@ -307,6 +310,7 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
 
     image = None
     media_kind = "text"
+    media_error = None
     num_media = int(form.get("NumMedia", "0") or 0)
     if num_media:
         media_url = form.get("MediaUrl0", "")
@@ -328,8 +332,9 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
                 body = body or f"(the customer sent a {ctype} file, which you can't open)"
         except Exception as e:
             media_kind = "error"
+            media_error = f"media download failed: {e}"
             body = body or "(the customer sent an attachment that couldn't be processed)"
-            print(f"media handling failed: {e}")
+            print(media_error)
 
     if not body:
         raise HTTPException(status_code=400, detail="Nothing to reply to")
@@ -339,14 +344,18 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
         # Can't send via Twilio's API, so answer inline instead of generating a reply
         # nobody ever receives. Slower path (risks Twilio's ~15s timeout on long
         # exchanges) and can't attach media - set the missing vars to get those back.
-        print(f"Replying inline; set {', '.join(missing)} for async replies with media.")
-        reply_text = _handle_message(from_number, body, image, media_kind, send=False)
+        note = (f"replied INLINE - not set: {', '.join(missing)}. Twilio drops inline "
+                f"replies slower than ~15s, and media can't be attached.")
+        if media_error:
+            note = media_error + " | " + note
+        print(note)
+        reply_text = _handle_message(from_number, body, image, media_kind, send=False, note=note)
         twiml = MessagingResponse()
         twiml.message(reply_text)
         return Response(content=str(twiml), media_type="application/xml")
 
     # Ack Twilio immediately with empty TwiML; the real reply goes out via the API.
-    background.add_task(_handle_message, from_number, body, image, media_kind)
+    background.add_task(_handle_message, from_number, body, image, media_kind, True, media_error)
     return Response(content=str(MessagingResponse()), media_type="application/xml")
 
 
