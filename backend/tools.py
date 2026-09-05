@@ -14,8 +14,8 @@ TOOL_SCHEMAS = [
     {
         "name": "search_website",
         "description": (
-            "Search the crawled content of the company website. Use for questions about "
-            "the company, its products, services, coverage, or policies."
+            "Search the crawled content of the shop's website or FAQ page, if one is "
+            "configured. Use for general questions about the shop, its policies, or offers."
         ),
         "parameters": {
             "type": "object",
@@ -27,7 +27,7 @@ TOOL_SCHEMAS = [
         "name": "lookup_customer",
         "description": (
             "Look up the customer record for whoever is messaging right now (matched on their "
-            "WhatsApp number). Use to greet them by name or check their plan. Takes no arguments."
+            "WhatsApp number). Use to greet them by name or check their customer type. Takes no arguments."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
@@ -47,7 +47,7 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "list_products",
-        "description": "List the products/services available, with per-message pricing. Takes no arguments.",
+        "description": "List the products in stock, with prices in rupees. Takes no arguments.",
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -58,7 +58,7 @@ TOOL_SCHEMAS = [
         ),
         "parameters": {
             "type": "object",
-            "properties": {"sku": {"type": "string", "description": "Product SKU, e.g. WA-API"}},
+            "properties": {"sku": {"type": "string", "description": "Product SKU, e.g. RICE-BASMATI-5KG"}},
             "required": ["sku"],
         },
     },
@@ -72,7 +72,7 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "summary": {"type": "string", "description": "One-line description of the issue."},
-                "priority": {"type": "string", "description": "low, normal, high or urgent. Use high/urgent only for outages or blocked production traffic."},
+                "priority": {"type": "string", "description": "low, normal, high or urgent. Use high/urgent only for a wrong/missing delivery or a spoiled item."},
             },
             "required": ["summary"],
         },
@@ -94,40 +94,27 @@ TOOL_SCHEMAS = [
     {
         "name": "get_account_summary",
         "description": (
-            "The caller's account overview: plan, this month's send volumes and delivery rates "
-            "per channel, and any unpaid invoices. Use for 'how is my account doing' type questions. "
+            "The caller's account overview: customer type, orders and spend this month, and any "
+            "khata (credit tab) due. Use for 'how much do I owe' or 'how's my account' type questions. "
             "Takes no arguments."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
-        "name": "get_usage_stats",
-        "description": (
-            "Message volumes and delivery rates for the caller, by month and channel. Use for "
-            "questions about how many messages were sent, delivery/failure rates, or usage trends."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {"month": {"type": "string", "description": "Optional, e.g. 2026-09. Omit for all months."}},
-            "required": [],
-        },
-    },
-    {
-        "name": "list_invoices",
-        "description": "The caller's invoices with amounts, due dates and paid/unpaid status. Takes no arguments.",
+        "name": "list_khata",
+        "description": "The caller's khata (credit tab) entries with amounts, due dates and paid/unpaid status. Takes no arguments.",
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
-        "name": "check_coverage_pricing",
+        "name": "check_delivery_area",
         "description": (
-            "Look up the per-message rate card for a country and/or channel (WhatsApp, SMS, Voice OTP). "
-            "Use for 'how much does it cost to send to X' questions."
+            "Look up delivery options and fees for an area. Use for 'do you deliver to X' or "
+            "'how much is delivery' questions."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "country": {"type": "string", "description": "e.g. India. Optional."},
-                "channel": {"type": "string", "description": "e.g. WhatsApp or SMS. Optional."},
+                "area": {"type": "string", "description": "Locality name, e.g. Koramangala. Optional - omit to list all."},
             },
             "required": [],
         },
@@ -135,47 +122,47 @@ TOOL_SCHEMAS = [
     {
         "name": "place_order",
         "description": (
-            "Raise a new order on the caller's account. Only call this once you have the product SKU "
+            "Place a new order on the caller's account. Only call this once you have the product SKU "
             "and quantity - ask for anything missing first. The order is created as 'pending "
-            "confirmation'; tell them the order number and that sales will confirm."
+            "confirmation'; tell them the order number and that the shop will confirm."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "sku": {"type": "string", "description": "Product SKU, e.g. WA-API. Use list_products if unsure."},
-                "quantity": {"type": "integer", "description": "Number of messages/units."},
+                "sku": {"type": "string", "description": "Product SKU, e.g. RICE-BASMATI-5KG. Use list_products if unsure."},
+                "quantity": {"type": "integer", "description": "Number of units/packs."},
                 "needed_by": {"type": "string", "description": "Optional date they need it by, e.g. 2026-10-01."},
             },
             "required": ["sku", "quantity"],
         },
     },
     {
-        "name": "list_catalogue",
+        "name": "list_stock_requests",
         "description": (
-            "List the caller's message templates (their catalogue), with approval status. "
+            "List items the caller has asked the shop to start stocking, with review status. "
             "Takes no arguments."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
     {
-        "name": "add_catalogue_item",
+        "name": "request_stock_item",
         "description": (
-            "Submit a new message template to the caller's catalogue for approval. Use {{1}}, {{2}} "
-            "for variables. Confirm the wording with the customer before submitting."
+            "Ask the shop to start stocking an item it doesn't currently carry. Confirm the item "
+            "name with the customer before submitting."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "item_name": {"type": "string", "description": "lowercase_with_underscores, e.g. order_shipped_v3"},
-                "category": {"type": "string", "description": "marketing, utility or authentication"},
-                "body": {"type": "string", "description": "The template text, with {{1}} style placeholders."},
+                "item_name": {"type": "string", "description": "e.g. Organic Jaggery 500g"},
+                "category": {"type": "string", "description": "e.g. Sweeteners, Snacks, Personal Care"},
+                "note": {"type": "string", "description": "Why they want it, or how much they'd typically buy."},
             },
-            "required": ["item_name", "category", "body"],
+            "required": ["item_name", "category", "note"],
         },
     },
     {
         "name": "schedule_callback",
-        "description": "Book a callback from the team at a time the customer gives you.",
+        "description": "Book a callback from the shop owner at a time the customer gives you.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -186,10 +173,11 @@ TOOL_SCHEMAS = [
         },
     },
     {
-        "name": "check_service_status",
+        "name": "check_store_notices",
         "description": (
-            "Check for ongoing platform incidents or degraded services. Use FIRST when a customer "
-            "reports messages failing or being slow. Takes no arguments."
+            "Check for current store notices - stock shortages, timing changes, festival closures. "
+            "Use FIRST when a customer asks why an item isn't available or the shop seems closed. "
+            "Takes no arguments."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
@@ -287,23 +275,17 @@ class ToolBox:
         summary = crm.account_summary(self.caller_phone)
         return json.dumps(summary) if summary else "No account found for this number."
 
-    def _get_usage_stats(self, args: dict) -> str:
+    def _list_khata(self, args: dict) -> str:
         if not self.caller_phone:
             return "No caller context available."
-        stats = crm.usage_stats(self.caller_phone, args.get("month"))
-        return json.dumps(stats) if stats else "No usage recorded for that period."
+        khata = crm.list_khata(self.caller_phone)
+        return json.dumps(khata) if khata else "No khata entries on this account."
 
-    def _list_invoices(self, args: dict) -> str:
-        if not self.caller_phone:
-            return "No caller context available."
-        invoices = crm.list_invoices(self.caller_phone)
-        return json.dumps(invoices) if invoices else "No invoices on this account."
-
-    def _check_coverage_pricing(self, args: dict) -> str:
-        rates = crm.coverage_rates(args.get("country"), args.get("channel"))
-        if not rates:
-            return "No rate card entry for that country/channel - support can quote it."
-        return json.dumps(rates)
+    def _check_delivery_area(self, args: dict) -> str:
+        areas = crm.delivery_areas(args.get("area"))
+        if not areas:
+            return "No delivery info for that area - the shop can confirm directly."
+        return json.dumps(areas)
 
     def _place_order(self, args: dict) -> str:
         if not self.caller_phone:
@@ -319,19 +301,19 @@ class ToolBox:
             return f"No product with SKU {args.get('sku')}. Use list_products to see valid SKUs."
         return json.dumps(order)
 
-    def _list_catalogue(self, args: dict) -> str:
+    def _list_stock_requests(self, args: dict) -> str:
         if not self.caller_phone:
             return "No caller context available."
-        items = crm.list_catalogue(self.caller_phone)
-        return json.dumps(items) if items else "No templates in this account's catalogue yet."
+        items = crm.list_stock_requests(self.caller_phone)
+        return json.dumps(items) if items else "No stock requests from this account yet."
 
-    def _add_catalogue_item(self, args: dict) -> str:
+    def _request_stock_item(self, args: dict) -> str:
         if not self.caller_phone:
             return "No caller context available."
-        name, category, body = args.get("item_name"), args.get("category"), args.get("body")
-        if not (name and category and body):
-            return "Need item_name, category and body to submit a template."
-        return json.dumps(crm.add_catalogue_item(self.caller_phone, name, category, body))
+        name, category, note = args.get("item_name"), args.get("category"), args.get("note")
+        if not (name and category and note):
+            return "Need item_name, category and note to submit a stock request."
+        return json.dumps(crm.request_stock_item(self.caller_phone, name, category, note))
 
     def _schedule_callback(self, args: dict) -> str:
         if not self.caller_phone:
@@ -341,8 +323,8 @@ class ToolBox:
         return json.dumps(crm.schedule_callback(
             self.caller_phone, args["preferred_time"], args.get("topic")))
 
-    def _check_service_status(self, args: dict) -> str:
-        incidents = crm.service_status()
-        if not incidents:
-            return "All services operating normally - no open incidents."
-        return json.dumps(incidents)
+    def _check_store_notices(self, args: dict) -> str:
+        notices = crm.store_notices()
+        if not notices:
+            return "No current store notices - everything's normal."
+        return json.dumps(notices)

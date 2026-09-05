@@ -1,22 +1,25 @@
 # WhatsApp concierge + multi-model token/cost tracker
 
-Answers WhatsApp messages (via Twilio) as a website concierge, using Claude, ChatGPT,
-or Gemini with a tool-calling loop over a one-time crawl of a target site plus a toy
-CRM. Every reply's exact token usage and cost land in a built-in `/admin` page, where
-you can switch the active provider/model. This is a throwaway
+Answers WhatsApp messages (via Twilio) as a local kirana (grocery) store's assistant,
+using ChatGPT or Gemini with a tool-calling loop over a toy CRM (products, orders,
+khata/credit tab, delivery areas) plus an optional one-time crawl of the shop's own
+website or FAQ page. Every reply's exact token usage and cost land in a built-in
+`/admin` page, where you can switch the active provider/model. This is a throwaway
 test rig for comparing token/cost across models, not a hardened product.
 
 **What the bot can do**
 - Replies in a snappy, emoji-friendly WhatsApp voice (short messages, `*bold*` facts,
   numbered options).
 - **Receives** text, images (sent to the model as vision input), and voice notes
-  (transcribed with OpenAI Whisper - needed even when Claude/Gemini is the chat model,
-  since Claude can't take audio).
+  (transcribed with OpenAI Whisper regardless of which chat model is active, since
+  Gemini's chat models don't take audio input directly).
 - **Sends** text, product images, and voice notes back (voice replies when you sent a
   voice note; OpenAI TTS).
 - Calls a **toy CRM** (`crm.py`): looks the caller up by WhatsApp number, lists their
-  orders, checks an order by number, lists products, sends a product image, and opens
-  support tickets. All dummy seeded data - edit the lists at the top of `crm.py`.
+  orders, checks an order by number, lists products and prices, sends a product image,
+  checks delivery areas/fees, looks up the khata (credit tab), takes new orders, and
+  opens complaint tickets. All dummy seeded data - edit the lists at the top of
+  `crm.py`.
 - No WhatsApp **templates** needed: the bot only ever replies inside the 24-hour
   customer service window, where free-form text and media are allowed. (Carousels and
   quick-reply buttons *would* need approved Content Templates - not built.)

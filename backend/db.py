@@ -125,18 +125,7 @@ CREATE TABLE IF NOT EXISTS crm_invoices (
     due_date TEXT
 );
 
--- Monthly send volumes and delivery rates - the bread and butter of a CPaaS account.
-CREATE TABLE IF NOT EXISTS crm_usage_stats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone_number TEXT NOT NULL,
-    month TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    sent INTEGER NOT NULL,
-    delivered INTEGER NOT NULL,
-    failed INTEGER NOT NULL
-);
-
--- Per-country rate card.
+-- Delivery areas and fees (country/channel columns repurposed as area/delivery type).
 CREATE TABLE IF NOT EXISTS crm_coverage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     country TEXT NOT NULL,
@@ -145,7 +134,7 @@ CREATE TABLE IF NOT EXISTS crm_coverage (
     notes TEXT
 );
 
--- The customer's own message-template catalogue, which they can add to over chat.
+-- Items a customer has asked the shop to start stocking.
 CREATE TABLE IF NOT EXISTS crm_catalogue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     phone_number TEXT NOT NULL,
