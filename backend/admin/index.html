@@ -136,8 +136,15 @@ function renderModelSelect() {
   let html = '';
   for (const [provider, info] of Object.entries(currentSettings.providers)) {
     const live = modelLists[provider] || {};
-    // Priced models until the live list arrives, then whatever the provider reports.
-    const models = (live.models && live.models.length) ? live.models : info.priced_models;
+    // Only ever offer models the provider actually reported. Falling back to names
+    // from the pricing table would let you pick one that doesn't exist, which then
+    // 404s on every message.
+    const models = live.models || [];
+    if (!models.length) {
+      html += `<optgroup label="${esc(provider)} — ${
+        live.note ? esc(live.note.slice(0, 60)) : 'loading…'}"></optgroup>`;
+      continue;
+    }
     // Only flag models we genuinely can't cost (the backend accounts for snapshots
     // inheriting their base model's rates).
     const unpriced = new Set(live.unpriced || []);

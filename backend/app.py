@@ -419,6 +419,17 @@ def admin_update_settings(req: SettingsUpdate):
         raise HTTPException(status_code=400, detail=f"Unknown provider '{req.provider}'")
     if not db.resolve_api_key(req.provider):
         raise HTTPException(status_code=400, detail=f"No API key configured for '{req.provider}' yet")
+
+    # Reject a model the provider doesn't actually serve, rather than letting every
+    # message fail later with a 404 from their API.
+    info = list_models(req.provider)
+    if info["live"] and req.model not in info["models"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{req.model}' isn't a model {req.provider} offers on this key. "
+                   f"Pick one from the list (e.g. {', '.join(info['models'][:3])}).",
+        )
+
     db.update_settings(req.provider, req.model)
     return {"ok": True}
 

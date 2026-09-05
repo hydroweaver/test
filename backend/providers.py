@@ -13,11 +13,10 @@ import db
 
 PROVIDERS = ["openai", "gemini"]
 
-# Shown if the provider's API can't be reached (no key, network, etc.)
-FALLBACK_MODELS = {
-    "openai": ["gpt-5", "gpt-5-mini", "gpt-5-nano"],
-    "gemini": ["gemini-3-pro", "gemini-3-flash"],
-}
+# Deliberately empty. Guessed model IDs are worse than none: picking one that
+# doesn't exist fails at request time with a 404 from the provider. If we can't
+# list models, say so instead of offering names we haven't verified.
+FALLBACK_MODELS: dict[str, list[str]] = {"openai": [], "gemini": []}
 
 _cache: dict[str, tuple[float, list[str]]] = {}
 CACHE_SECONDS = 300
