@@ -16,14 +16,13 @@ import db
 import media
 from agent import run_agent
 from pricing import calculate_cost, load_pricing
-from providers import PROVIDERS, ProviderError
+from providers import PROVIDERS, ProviderError, list_models
 
 load_dotenv()
 
 app = FastAPI(title="WhatsApp concierge + multi-model token/cost tracker")
 
 DEFAULT_MODELS = {
-    "anthropic": os.environ.get("ANTHROPIC_DEFAULT_MODEL", "claude-opus-5"),
     "openai": os.environ.get("OPENAI_DEFAULT_MODEL", "gpt-5"),
     "gemini": os.environ.get("GEMINI_DEFAULT_MODEL", "gemini-3-flash"),
 }
@@ -96,6 +95,7 @@ def models():
         provider: {
             **db.key_status(provider),
             "default_model": DEFAULT_MODELS[provider],
+            "models": list_models(provider),
             "priced_models": list(pricing.get(provider, {}).keys()),
         }
         for provider in PROVIDERS
@@ -383,7 +383,8 @@ def admin_get_settings():
             provider: {
                 **db.key_status(provider),
                 "default_model": DEFAULT_MODELS[provider],
-                "priced_models": list(pricing.get(provider, {}).keys()),
+                "models": list_models(provider),
+            "priced_models": list(pricing.get(provider, {}).keys()),
             }
             for provider in PROVIDERS
         },

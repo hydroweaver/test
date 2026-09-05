@@ -12,7 +12,7 @@ import db
 from providers import ProviderError
 from tools import TOOL_SCHEMAS, ToolBox
 
-MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "2"))
+MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "4"))
 
 # Prompt caching is on by default: the system prompt + tool schemas are a ~2k token
 # static prefix resent on every turn, which is exactly what caching is for. Set
@@ -28,7 +28,7 @@ class AgentResult(NamedTuple):
     turn_count: int
     media_files: list[str]
     cache_read_tokens: int = 0   # served from cache (cheap)
-    cache_write_tokens: int = 0  # written into cache (Anthropic charges a premium)
+    cache_write_tokens: int = 0  # written into cache (charged at a premium by some providers)
 
 
 def _key(provider: str) -> str:
@@ -39,66 +39,6 @@ def _key(provider: str) -> str:
             f"the {provider.upper()}_API_KEY env var."
         )
     return key
-
-
-def _run_anthropic_agent(message, model, system, history, image, toolbox) -> AgentResult:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=_key("anthropic"))
-    tools = [
-        {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
-        for t in TOOL_SCHEMAS
-    ]
-    messages = [{"role": h["role"], "content": h["content"]} for h in history]
-    if image:
-        messages.append({"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": image["media_type"], "data": image["b64"]}},
-            {"type": "text", "text": message},
-        ]})
-    else:
-        messages.append({"role": "user", "content": message})
-
-    # A cache breakpoint on the system block caches everything before it in the
-    # render order (tools -> system), i.e. the whole static prefix.
-    if system and PROMPT_CACHING:
-        system_param = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-    else:
-        system_param = system or anthropic.NOT_GIVEN
-
-    input_tokens = output_tokens = tool_calls = cache_read = cache_write = 0
-    for turn in range(MAX_TOOL_TURNS + 1):
-        force_text = turn == MAX_TOOL_TURNS
-        response = client.messages.create(
-            model=model,
-            max_tokens=600,
-            system=system_param,
-            messages=messages,
-            tools=[] if force_text else tools,
-            tool_choice={"type": "none"} if force_text else anthropic.NOT_GIVEN,
-        )
-        input_tokens += response.usage.input_tokens
-        output_tokens += response.usage.output_tokens
-        cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
-        cache_write += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-
-        tool_uses = [b for b in response.content if b.type == "tool_use"]
-        if not tool_uses or force_text:
-            reply = "".join(b.text for b in response.content if b.type == "text")
-            return AgentResult(reply, input_tokens, output_tokens, tool_calls, turn + 1,
-                               toolbox.pending_media, cache_read, cache_write)
-
-        messages.append({"role": "assistant", "content": response.content})
-        results = []
-        for tu in tool_uses:
-            results.append({
-                "type": "tool_result", "tool_use_id": tu.id,
-                "content": toolbox.call(tu.name, dict(tu.input or {})),
-            })
-            tool_calls += 1
-        messages.append({"role": "user", "content": results})
-
-    return AgentResult("", input_tokens, output_tokens, tool_calls, MAX_TOOL_TURNS + 1,
-                       toolbox.pending_media, cache_read, cache_write)
 
 
 def _run_openai_agent(message, model, system, history, image, toolbox) -> AgentResult:
@@ -218,7 +158,6 @@ def _run_gemini_agent(message, model, system, history, image, toolbox) -> AgentR
 
 
 AGENTS = {
-    "anthropic": _run_anthropic_agent,
     "openai": _run_openai_agent,
     "gemini": _run_gemini_agent,
 }

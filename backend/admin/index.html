@@ -7,132 +7,108 @@
   :root {
     --bg: #f6f7f9; --card: #ffffff; --border: #e5e7eb; --text: #1a1d23; --muted: #6b7280;
     --accent: #4f46e5; --accent-hover: #4338ca; --good: #059669; --good-bg: #ecfdf5;
-    --bad: #dc2626; --bad-bg: #fef2f2; --radius: 12px;
+    --bad: #dc2626; --bad-bg: #fef2f2; --radius: 10px;
   }
   * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--text);
-    max-width: 980px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem;
-    line-height: 1.5;
-  }
-  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-  .subtitle { color: var(--muted); font-size: .9rem; margin: 0 0 2rem; }
-  h2 { font-size: 1rem; margin: 0 0 .2rem; }
-  .section-hint { color: var(--muted); font-size: .82rem; margin: 0 0 1rem; }
-  section {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 2px rgba(0,0,0,.03);
-  }
-  label { display: block; font-size: .78rem; color: var(--muted); margin: 0 0 .3rem; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
-  select, input[type=password] {
-    width: 100%; padding: .55rem .65rem; font-size: .9rem; border: 1px solid var(--border);
-    border-radius: 8px; background: #fff; color: var(--text);
-  }
-  select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  button {
-    cursor: pointer; padding: .55rem 1rem; font-size: .85rem; font-weight: 600;
-    border: none; border-radius: 8px; background: var(--accent); color: #fff; transition: background .12s;
-  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); margin: 0; line-height: 1.5; }
+
+  /* everything you need, in one bar, no navigation */
+  .topbar { position: sticky; top: 0; z-index: 10; background: var(--card);
+            border-bottom: 1px solid var(--border); padding: .7rem 1.5rem;
+            display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: .95rem; margin-right: auto; }
+  .brand span { font-weight: 400; color: var(--muted); font-size: .8rem; margin-left: .5rem; }
+  select { padding: .45rem .6rem; font-size: .85rem; border: 1px solid var(--border);
+           border-radius: 8px; background: #fff; color: var(--text); min-width: 230px; }
+  button { cursor: pointer; padding: .45rem .9rem; font-size: .82rem; font-weight: 600;
+           border: none; border-radius: 8px; background: var(--accent); color: #fff; }
   button:hover { background: var(--accent-hover); }
   button.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
-  button.secondary:hover { background: #f3f4f6; }
+  button:disabled { opacity: .6; cursor: default; }
+  .bar-msg { font-size: .78rem; color: var(--muted); }
+  .bar-msg.error { color: var(--bad); }
 
-  .provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .9rem; }
-  .provider-card { border: 1px solid var(--border); border-radius: 10px; padding: .9rem; }
-  .provider-name { font-weight: 700; font-size: .95rem; margin-bottom: .4rem; text-transform: capitalize; }
-  .pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .72rem; font-weight: 600; margin-bottom: .7rem; }
+  main { padding: 1.25rem 1.5rem 3rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+           gap: .8rem; margin-bottom: 1rem; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .8rem; }
+  .stat .label { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+  .stat .value { font-size: 1.2rem; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .8rem; table-layout: fixed;
+          background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
+  th { text-align: left; padding: .5rem .7rem; background: var(--bg); color: var(--muted);
+       font-weight: 600; text-transform: uppercase; font-size: .66rem; letter-spacing: .03em; }
+  td { padding: .55rem .7rem; border-top: 1px solid var(--border); overflow-wrap: break-word;
+       vertical-align: top; }
+  td.msg-cell { white-space: normal; line-height: 1.35; }
+  td.dim { color: var(--muted); }
+  .tiny { font-size: .66rem; color: var(--muted); }
+  .err { color: var(--bad); font-size: .7rem; margin-top: .25rem; }
+  .sent { color: var(--good); font-size: .66rem; margin-top: .25rem; }
+  .cached { color: var(--good); font-size: .64rem; }
+  .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
+          padding: 0 .3rem; font-size: .62rem; font-weight: 700; text-transform: uppercase; }
+
+  /* keys tucked away - open only when you need to paste one */
+  details.keys { margin-bottom: 1rem; }
+  details.keys summary { cursor: pointer; font-size: .8rem; color: var(--muted); padding: .3rem 0; }
+  .provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+                   gap: .8rem; margin-top: .6rem; }
+  .provider-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem; }
+  .provider-name { font-weight: 700; font-size: .9rem; text-transform: capitalize; margin-bottom: .35rem; }
+  .pill { display: inline-block; padding: .12rem .5rem; border-radius: 999px; font-size: .7rem;
+          font-weight: 600; margin-bottom: .6rem; }
   .pill.ok { color: var(--good); background: var(--good-bg); }
   .pill.no { color: var(--bad); background: var(--bad-bg); }
-  .key-row { display: flex; gap: .5rem; }
-  .key-row input { flex: 1; }
-
-  .model-picker { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
-  .field { min-width: 200px; }
-  .msg { font-size: .82rem; margin-top: .6rem; color: var(--muted); }
-  .msg.error { color: var(--bad); }
-
-  .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
-  .stat { background: var(--bg); border-radius: 8px; padding: .7rem .9rem; }
-  .stat .label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
-  .stat .value { font-size: 1.25rem; font-weight: 700; margin-top: .1rem; }
-
-  .table-wrap { border: 1px solid var(--border); border-radius: 8px; }
-  table { width: 100%; border-collapse: collapse; font-size: .8rem; table-layout: fixed; }
-  th { text-align: left; padding: .55rem .7rem; background: var(--bg); color: var(--muted); font-weight: 600;
-       text-transform: uppercase; font-size: .68rem; letter-spacing: .03em; }
-  td { padding: .55rem .7rem; border-top: 1px solid var(--border); overflow-wrap: break-word; }
-  td.msg-cell { white-space: normal; font-size: .8rem; vertical-align: top; line-height: 1.35; }
-  td.dim { vertical-align: top; color: var(--muted); }
-  .tiny { font-size: .68rem; color: var(--muted); }
-  .err { color: var(--bad); font-size: .72rem; margin-top: .25rem; white-space: normal; }
-  .cached { color: var(--good); font-size: .66rem; }
-  .sent { color: var(--good); font-size: .68rem; margin-top: .25rem; white-space: normal; }
-  .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
-          padding: 0 .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; }
-  tr:hover td { background: #fafafa; }
-  .table-footer { display: flex; justify-content: space-between; align-items: center; margin-top: .9rem; }
+  .key-row { display: flex; gap: .4rem; }
+  .key-row input { flex: 1; padding: .45rem; font-size: .82rem; border: 1px solid var(--border); border-radius: 8px; }
 </style>
 </head>
 <body>
-<h1>Concierge admin</h1>
-<p class="subtitle">Manage provider keys, pick the active model, and watch what each reply costs.</p>
 
-<section>
-  <h2>API keys</h2>
-  <p class="section-hint">Saved keys are encrypted and take effect immediately - no redeploy needed.</p>
-  <div class="provider-grid" id="providers"></div>
-</section>
+<div class="topbar">
+  <div class="brand">Concierge admin <span id="active-label"></span></div>
+  <select id="model-select" title="Provider and model"></select>
+  <button id="save-model" onclick="saveSettings(this)">Set active</button>
+  <button class="secondary" onclick="loadUsage()">Refresh</button>
+  <span class="bar-msg" id="bar-msg"></span>
+</div>
 
-<section>
-  <h2>Active model</h2>
-  <p class="section-hint">This is what answers WhatsApp messages and <code>/chat</code> requests.</p>
-  <div class="model-picker">
-    <div class="field">
-      <label>Provider</label>
-      <select id="active-provider"></select>
-    </div>
-    <div class="field">
-      <label>Model</label>
-      <select id="active-model"></select>
-    </div>
-    <button onclick="saveSettings()">Save</button>
-  </div>
-  <div class="msg" id="settings-msg"></div>
-</section>
+<main>
+  <details class="keys">
+    <summary>API keys — encrypted, effective immediately, no redeploy</summary>
+    <div class="provider-grid" id="providers"></div>
+  </details>
 
-<section>
-  <h2>Usage log</h2>
-  <p class="section-hint">Every reply, with exact token counts and cost from the provider's own response.</p>
-  <div class="totals" id="totals"></div>
-  <div class="table-wrap">
-    <table id="usage-table">
-      <colgroup>
-        <col style="width:11%"><col style="width:25%"><col style="width:29%"><col style="width:11%">
-        <col style="width:6%"><col style="width:6%"><col style="width:12%">
-      </colgroup>
-      <thead><tr>
-        <th>Time</th><th>Message</th><th>Reply</th><th>Model</th>
-        <th>In</th><th>Out</th><th>Cost</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
-  <div class="table-footer">
-    <span class="msg" id="usage-msg"></span>
-    <button class="secondary" onclick="loadUsage()">Refresh</button>
-  </div>
-</section>
+  <div class="stats" id="totals"></div>
+
+  <table id="usage-table">
+    <colgroup>
+      <col style="width:11%"><col style="width:25%"><col style="width:29%"><col style="width:11%">
+      <col style="width:6%"><col style="width:6%"><col style="width:12%">
+    </colgroup>
+    <thead><tr>
+      <th>Time</th><th>Message</th><th>Reply</th><th>Model</th><th>In</th><th>Out</th><th>Cost</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</main>
 
 <script>
 let currentSettings = null;
 
-// Message/reply text comes from WhatsApp users - escape it before it touches innerHTML.
 function esc(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => (
-    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
-  ));
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function barMsg(text, isError) {
+  const el = document.getElementById('bar-msg');
+  el.className = 'bar-msg' + (isError ? ' error' : '');
+  el.textContent = text || '';
 }
 
 async function api(path, opts) {
@@ -144,7 +120,43 @@ async function api(path, opts) {
 async function loadSettings() {
   currentSettings = await api('/admin/settings');
   renderProviders();
-  renderModelPickers();
+  renderModelSelect();
+}
+
+// One dropdown: every provider/model pair the configured keys can actually call.
+function renderModelSelect() {
+  const sel = document.getElementById('model-select');
+  const active = `${currentSettings.active_provider}|${currentSettings.active_model}`;
+  let html = '';
+  for (const [provider, info] of Object.entries(currentSettings.providers)) {
+    const models = (info.models && info.models.length) ? info.models : info.priced_models;
+    const priced = new Set(info.priced_models || []);
+    html += `<optgroup label="${esc(provider)}${info.configured ? '' : ' (no key)'}">` +
+      models.map(m => {
+        const val = `${provider}|${m}`;
+        return `<option value="${esc(val)}" ${val === active ? 'selected' : ''}>${
+          esc(provider)} / ${esc(m)}${priced.has(m) ? '' : ' — no pricing'}</option>`;
+      }).join('') + '</optgroup>';
+  }
+  sel.innerHTML = html;
+  document.getElementById('active-label').textContent =
+    `· ${currentSettings.active_provider} / ${currentSettings.active_model}`;
+}
+
+async function saveSettings(btn) {
+  const [provider, model] = document.getElementById('model-select').value.split('|');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api('/admin/settings', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({provider, model}),
+    });
+    await loadSettings();
+    barMsg(`Active: ${provider} / ${model}`);
+  } catch (e) {
+    barMsg(e.message, true);
+  }
+  btn.disabled = false; btn.textContent = 'Set active';
 }
 
 function renderProviders() {
@@ -154,16 +166,13 @@ function renderProviders() {
     const div = document.createElement('div');
     div.className = 'provider-card';
     div.innerHTML = `
-      <div class="provider-name">${name}</div>
-      <span class="pill ${info.configured ? 'ok' : 'no'}">
-        ${info.configured ? info.masked + ' · ' + info.source : 'not configured'}
-      </span>
-      <label>Paste key</label>
+      <div class="provider-name">${esc(name)}</div>
+      <span class="pill ${info.configured ? 'ok' : 'no'}">${
+        info.configured ? esc(info.masked) + ' · ' + esc(info.source) : 'not configured'}</span>
       <div class="key-row">
-        <input type="password" id="key-${name}" placeholder="sk-...">
-        <button onclick="saveKey('${name}', this)">Save</button>
-      </div>
-    `;
+        <input type="password" id="key-${esc(name)}" placeholder="paste key">
+        <button onclick="saveKey('${esc(name)}', this)">Save</button>
+      </div>`;
     el.appendChild(div);
   }
 }
@@ -171,71 +180,34 @@ function renderProviders() {
 async function saveKey(provider, btn) {
   const input = document.getElementById('key-' + provider);
   if (!input.value.trim()) return;
-  const original = btn.textContent;
-  btn.textContent = 'Saving…';
-  btn.disabled = true;
+  btn.disabled = true; btn.textContent = 'Saving…';
   try {
     await api('/admin/keys', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({provider, api_key: input.value.trim()}),
     });
     input.value = '';
-    await loadSettings();   // rebuilds the cards, so btn is gone - nothing more to reset
-  } catch (e) {
-    btn.textContent = original;
-    btn.disabled = false;
-    alert('Could not save key: ' + e.message);
-  }
-}
-
-function renderModelPickers() {
-  const providerSel = document.getElementById('active-provider');
-  providerSel.innerHTML = Object.keys(currentSettings.providers)
-    .map(p => `<option value="${p}" ${p === currentSettings.active_provider ? 'selected' : ''}>${p}</option>`).join('');
-  providerSel.onchange = renderModelOptions;
-  renderModelOptions();
-}
-
-function renderModelOptions() {
-  const provider = document.getElementById('active-provider').value;
-  const models = currentSettings.providers[provider].priced_models;
-  const modelSel = document.getElementById('active-model');
-  modelSel.innerHTML = models.map(m =>
-    `<option value="${m}" ${m === currentSettings.active_model ? 'selected' : ''}>${m}</option>`).join('');
-}
-
-async function saveSettings() {
-  const provider = document.getElementById('active-provider').value;
-  const model = document.getElementById('active-model').value;
-  const msg = document.getElementById('settings-msg');
-  msg.className = 'msg';
-  try {
-    await api('/admin/settings', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({provider, model}),
-    });
-    msg.textContent = 'Saved - now active for new replies.';
     await loadSettings();
+    barMsg(`${provider} key saved`);
   } catch (e) {
-    msg.className = 'msg error';
-    msg.textContent = e.message;
+    btn.disabled = false; btn.textContent = 'Save';
+    barMsg('Could not save key: ' + e.message, true);
   }
 }
 
 async function loadUsage() {
-  const usageMsg = document.getElementById('usage-msg');
-  usageMsg.textContent = 'Loading…';
   const data = await api('/admin/usage?limit=100');
   const t = data.totals;
   document.getElementById('totals').innerHTML = `
-    <div class="stat"><div class="label">Requests</div><div class="value">${t.count}</div></div>
-    <div class="stat"><div class="label">Input tokens</div><div class="value">${t.input_tokens}</div></div>
-    <div class="stat"><div class="label">Cached (cheap)</div><div class="value">${t.cache_read_tokens ?? 0}</div></div>
-    <div class="stat"><div class="label">Output tokens</div><div class="value">${t.output_tokens}</div></div>
-    <div class="stat"><div class="label">Cost (USD)</div><div class="value">$${(t.cost_usd || 0).toFixed(4)}</div></div>
-  `;
-  const tbody = document.querySelector('#usage-table tbody');
-  tbody.innerHTML = data.rows.length ? data.rows.map(r => `
+    <div class="stat"><div class="label">Replies</div><div class="value">${t.count}</div></div>
+    <div class="stat"><div class="label">Input</div><div class="value">${t.input_tokens}</div></div>
+    <div class="stat"><div class="label">Cached</div><div class="value">${t.cache_read_tokens ?? 0}</div></div>
+    <div class="stat"><div class="label">Output</div><div class="value">${t.output_tokens}</div></div>
+    <div class="stat"><div class="label">Cost</div><div class="value">$${(t.cost_usd || 0).toFixed(4)}</div></div>`;
+
+  // Oldest first, so the conversation reads top-to-bottom like a chat.
+  const rows = [...data.rows].reverse();
+  document.querySelector('#usage-table tbody').innerHTML = rows.length ? rows.map(r => `
     <tr>
       <td class="dim">${esc(r.created_at).slice(5, 16)}<br><span class="tiny">${esc(r.phone_number) || '[api]'}</span></td>
       <td class="msg-cell">${esc(r.user_message)}${
@@ -248,8 +220,9 @@ async function loadUsage() {
       <td>${r.input_tokens}${r.cache_read_tokens ? '<br><span class="cached">+' + r.cache_read_tokens + ' cached</span>' : ''}</td>
       <td>${r.output_tokens}</td>
       <td>${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
-    </tr>`).join('') : `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem;">No requests yet.</td></tr>`;
-  usageMsg.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+    </tr>`).join('')
+    : `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem;">No replies yet.</td></tr>`;
+  barMsg(`Updated ${new Date().toLocaleTimeString()}`);
 }
 
 loadSettings();

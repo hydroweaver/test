@@ -118,7 +118,67 @@ CREATE TABLE IF NOT EXISTS crm_tickets (
     phone_number TEXT NOT NULL,
     summary TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'open',
+    priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS crm_invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_number TEXT UNIQUE NOT NULL,
+    phone_number TEXT NOT NULL,
+    period TEXT NOT NULL,
+    amount_usd REAL NOT NULL,
+    status TEXT NOT NULL,
+    due_date TEXT
+);
+
+-- Monthly send volumes and delivery rates - the bread and butter of a CPaaS account.
+CREATE TABLE IF NOT EXISTS crm_usage_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL,
+    month TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    sent INTEGER NOT NULL,
+    delivered INTEGER NOT NULL,
+    failed INTEGER NOT NULL
+);
+
+-- Per-country rate card.
+CREATE TABLE IF NOT EXISTS crm_coverage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    country TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    rate_usd REAL NOT NULL,
+    notes TEXT
+);
+
+-- The customer's own message-template catalogue, which they can add to over chat.
+CREATE TABLE IF NOT EXISTS crm_catalogue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL,
+    item_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending review',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS crm_callbacks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone_number TEXT NOT NULL,
+    preferred_time TEXT NOT NULL,
+    topic TEXT,
+    status TEXT NOT NULL DEFAULT 'scheduled',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS crm_incidents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference TEXT UNIQUE NOT NULL,
+    service TEXT NOT NULL,
+    status TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    started_at TEXT NOT NULL
 );
 """
 
