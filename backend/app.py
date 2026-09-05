@@ -187,17 +187,26 @@ WHATSAPP_MAX_CHARS = 1500  # Twilio rejects WhatsApp bodies over 1600
 # WhatsApp reply, in plain English.
 TWILIO_ERROR_HINTS = {
     20003: "Authentication failed - TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is wrong.",
-    21606: "TWILIO_WHATSAPP_NUMBER isn't a WhatsApp-enabled sender on this account. "
-           "For the sandbox it must be +14155238886.",
-    21608: "That number hasn't joined your WhatsApp sandbox. Send the 'join <code>' "
-           "message to the sandbox number again - the join expires after 72 hours.",
+    21606: "TWILIO_WHATSAPP_NUMBER isn't a WhatsApp-enabled sender on this account.",
+    21608: "Number not permitted to receive from this sender (a trial account, or an "
+           "unjoined sandbox).",
     21610: "That number unsubscribed (replied STOP).",
     63007: "No WhatsApp sender found for TWILIO_WHATSAPP_NUMBER on this account.",
-    63016: "Outside the 24-hour customer service window - free-form messages are only "
-           "allowed within 24h of their last message. Message the bot, then retry.",
+    # The big one on a live WhatsApp Business number. A bot can only reply freely
+    # inside 24h of the customer's own last message; outside it, only an approved
+    # template goes through - which this app deliberately doesn't send.
+    63016: "Outside the 24-hour customer service window. A live WhatsApp Business "
+           "number can only send free-form messages within 24h of the customer's last "
+           "message - outside that, only an approved template is allowed. Message the "
+           "bot from that phone first, then reply within 24h.",
+    131047: "Outside the 24-hour window (Meta's code for the same thing) - the customer "
+            "must message you first, then you have 24h to reply freely.",
+    131026: "WhatsApp couldn't deliver it - the number isn't on WhatsApp, or can't "
+            "receive from this business.",
     63015: "WhatsApp couldn't deliver it - the number may not be on WhatsApp.",
     63024: "Twilio rejected the message body (empty, too long, or bad media URL).",
     63003: "Twilio couldn't find that recipient on WhatsApp.",
+    63018: "Rate limited by WhatsApp - too many messages too quickly.",
 }
 
 
@@ -612,9 +621,9 @@ def admin_twilio_test(req: WhatsAppTest):
     delivered = status in ("delivered", "read")
     hint = TWILIO_ERROR_HINTS.get(code, "") if code else ""
     if not delivered and not hint:
-        hint = ("Twilio took it but WhatsApp hasn't confirmed delivery. The usual cause "
-                "is the sandbox join expiring - send 'join <your-code>' to the sandbox "
-                "number from this phone, then try again."
+        hint = ("Twilio took it but WhatsApp hasn't confirmed delivery yet. The usual "
+                "cause is the 24-hour window: message the bot from that phone, then "
+                "test again within 24h."
                 if status in ("queued", "sent", "accepted")
                 else "Check the message in Twilio's console for the full reason.")
     return {"ok": delivered, "stage": "delivery", "message_sid": sid,

@@ -41,10 +41,17 @@ turns) counted against it - so per-reply cost is directly comparable.
 4. Crawl the target site once so the bot has something to answer from:
    `railway run python crawl.py https://www.example.com`
 5. For WhatsApp, set these env vars - **all four are required**: `TWILIO_ACCOUNT_SID`,
-   `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` (the sandbox number is
-   `+14155238886`) and `PUBLIC_BASE_URL` (your Railway URL). Then in the Twilio console
-   point the WhatsApp number's incoming-message webhook at
+   `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` (your live WhatsApp sender, or
+   `+14155238886` if you're on the sandbox) and `PUBLIC_BASE_URL` (your Railway URL).
+   Then in the Twilio console point the WhatsApp number's incoming-message webhook at
    `<your-railway-url>/webhook/whatsapp`.
+
+   **The 24-hour window applies to a live number.** WhatsApp only allows free-form
+   replies within 24 hours of the customer's own last message; outside that, only an
+   approved template goes through, and this app doesn't send templates. So the bot
+   answers people who message it, but a reply sent out of the blue (including the
+   admin page's *Test WhatsApp* button) is accepted by Twilio and then dropped by
+   WhatsApp with error 63016. The usage log now records that verdict.
 
    There is one delivery path: the webhook is acked instantly and the reply is sent
    from a background task via Twilio's API, which has no time limit - so a model that
