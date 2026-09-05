@@ -8,8 +8,12 @@ import json
 import os
 from typing import NamedTuple
 
+from google import genai
+from google.genai import types
+from openai import OpenAI
+
 import db
-from providers import ProviderError
+from providers import ProviderError, gemini_client
 from tools import TOOL_SCHEMAS, ToolBox
 
 MAX_TOOL_TURNS = int(os.environ.get("MAX_TOOL_TURNS", "4"))
@@ -42,8 +46,6 @@ def _key(provider: str) -> str:
 
 
 def _run_openai_agent(message, model, system, history, image, toolbox) -> AgentResult:
-    from openai import OpenAI
-
     client = OpenAI(api_key=_key("openai"))
     tools = [
         {"type": "function", "name": t["name"], "description": t["description"], "parameters": t["parameters"]}
@@ -99,10 +101,7 @@ def _run_openai_agent(message, model, system, history, image, toolbox) -> AgentR
 
 
 def _run_gemini_agent(message, model, system, history, image, toolbox) -> AgentResult:
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=_key("gemini"))
+    client = gemini_client(_key("gemini"))
     tool = types.Tool(function_declarations=[
         types.FunctionDeclaration(name=t["name"], description=t["description"], parameters=t["parameters"])
         for t in TOOL_SCHEMAS

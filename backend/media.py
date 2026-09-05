@@ -13,6 +13,7 @@ import os
 import uuid
 
 import requests
+from openai import OpenAI
 
 import db
 
@@ -48,8 +49,6 @@ def download_twilio_media(url: str) -> tuple[bytes, str]:
 
 def transcribe_audio(audio_bytes: bytes, content_type: str) -> str:
     """Voice note -> text, via OpenAI Whisper."""
-    from openai import OpenAI
-
     key = db.resolve_api_key("openai")
     if not key:
         raise RuntimeError(
@@ -74,8 +73,6 @@ def transcribe_audio(audio_bytes: bytes, content_type: str) -> str:
 
 def synthesize_voice_note(text: str) -> str | None:
     """Text -> an .mp3 in the public media dir. Returns the filename, or None if unavailable."""
-    from openai import OpenAI
-
     key = db.resolve_api_key("openai")
     if not key:
         return None

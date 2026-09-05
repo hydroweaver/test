@@ -9,6 +9,12 @@ flagged rather than silently costed wrong.
 import os
 import time
 
+# Imported at module level on purpose. Importing these lazily inside functions
+# meant two threadpool workers could import the same SDK concurrently and get
+# "partially initialized module" errors.
+from google import genai
+from openai import OpenAI
+
 import db
 
 PROVIDERS = ["openai", "gemini"]
@@ -45,8 +51,6 @@ def _require_key(env_var: str, provider: str) -> str:
 
 
 def _openai_models(api_key: str) -> list[str]:
-    from openai import OpenAI
-
     ids = [m.id for m in OpenAI(api_key=api_key).models.list()]
     # Chat-capable models only - skip embeddings, audio, image, moderation etc.
     skip = ("embedding", "whisper", "tts", "dall-e", "moderation", "image", "realtime",
@@ -56,11 +60,21 @@ def _openai_models(api_key: str) -> list[str]:
     return sorted(chat, reverse=True)
 
 
-def _gemini_models(api_key: str) -> list[str]:
-    from google import genai
+_clients: dict[str, object] = {}
 
+
+def gemini_client(api_key: str):
+    """One client per key, reused. Building a fresh one per call left short-lived
+    clients (and their HTTP transports) being torn down mid-use, which surfaces as
+    'Cannot send a request, as the client has been closed'."""
+    if api_key not in _clients:
+        _clients[api_key] = genai.Client(api_key=api_key)
+    return _clients[api_key]
+
+
+def _gemini_models(api_key: str) -> list[str]:
     out = []
-    for m in genai.Client(api_key=api_key).models.list():
+    for m in gemini_client(api_key).models.list():
         actions = getattr(m, "supported_actions", None) or []
         if actions and "generateContent" not in actions:
             continue
