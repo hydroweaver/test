@@ -233,6 +233,17 @@ def init_db(default_provider: str, default_model: str) -> None:
 
 def _fernet() -> Fernet:
     key = os.environ.get("SETTINGS_ENCRYPTION_KEY")
+    if key:
+        try:
+            return Fernet(key.encode())
+        except Exception:
+            # Not a real Fernet key (someone set a passphrase). Derive one from it
+            # rather than 500ing on every key save - deterministic, so anything
+            # already encrypted with this passphrase still decrypts.
+            import base64
+            import hashlib
+            derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
+            return Fernet(derived)
     if not key:
         # Nothing set - auto-generate one and store it next to the DB, so pasted
         # keys survive restarts without requiring any manual setup. If DB_PATH

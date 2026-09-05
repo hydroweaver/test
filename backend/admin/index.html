@@ -113,14 +113,38 @@ function barMsg(text, isError) {
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
-  if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
-  return res.json();
+  const text = await res.text();
+  if (!res.ok) {
+    // Errors aren't always JSON - a 500 or a proxy error returns HTML, and
+    // blindly parsing it hid the real status behind a JSON parse error.
+    let detail = text;
+    try { detail = JSON.parse(text).detail || text; } catch (_) {}
+    if (/^\s*</.test(detail)) detail = 'server returned an error page';
+    throw new Error(`${res.status} ${res.statusText}: ${String(detail).slice(0, 200)}`);
+  }
+  return text ? JSON.parse(text) : null;
 }
 
+let modelLists = {};
+
+// Fast: key status + active model, straight from the DB. Never waits on a network call.
 async function loadSettings() {
   currentSettings = await api('/admin/settings');
   renderProviders();
   renderModelSelect();
+}
+
+// Slow: hits each provider's API. Runs on its own so it can never block the page
+// or leave the Save button stuck on "Saving…".
+async function loadModels() {
+  try {
+    modelLists = await api('/admin/models');
+    renderModelSelect();
+    const warnings = Object.values(modelLists).filter(m => !m.live && m.note).map(m => m.note);
+    if (warnings.length) barMsg(warnings.join(' '), true);
+  } catch (e) {
+    barMsg('Could not load model lists: ' + e.message, true);
+  }
 }
 
 // One dropdown: every provider/model pair the configured keys can actually call.
@@ -128,13 +152,13 @@ function renderModelSelect() {
   const sel = document.getElementById('model-select');
   const active = `${currentSettings.active_provider}|${currentSettings.active_model}`;
   let html = '';
-  const warnings = [];
   for (const [provider, info] of Object.entries(currentSettings.providers)) {
-    const models = (info.models && info.models.length) ? info.models : info.priced_models;
+    const live = modelLists[provider] || {};
+    // Priced models until the live list arrives, then whatever the provider reports.
+    const models = (live.models && live.models.length) ? live.models : info.priced_models;
     const priced = new Set(info.priced_models || []);
-    if (!info.live && info.note) warnings.push(info.note);
     html += `<optgroup label="${esc(provider)}${
-      info.live ? ' — ' + models.length + ' models' : ' (partial list — no key)'}">` +
+      live.live ? ' — ' + models.length + ' models' : (live.note ? ' (partial list)' : ' …')}">` +
       models.map(m => {
         const val = `${provider}|${m}`;
         return `<option value="${esc(val)}" ${val === active ? 'selected' : ''}>${
@@ -144,7 +168,6 @@ function renderModelSelect() {
   sel.innerHTML = html;
   document.getElementById('active-label').textContent =
     `· ${currentSettings.active_provider} / ${currentSettings.active_model}`;
-  if (warnings.length) barMsg(warnings.join(' '), true);
 }
 
 async function saveSettings(btn) {
@@ -186,16 +209,22 @@ async function saveKey(provider, btn) {
   if (!input.value.trim()) return;
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    await api('/admin/keys', {
+    const saved = await api('/admin/keys', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({provider, api_key: input.value.trim()}),
     });
     input.value = '';
-    await loadSettings();
-    barMsg(`${provider} key saved`);
+    // Update straight from the save response - no reload, no waiting on anything.
+    Object.assign(currentSettings.providers[provider],
+                  {configured: true, masked: saved.masked, source: saved.source});
+    renderProviders();
+    barMsg(`${provider} key saved ✓`);
+    loadModels();          // refresh the dropdown in the background
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'Save';
     barMsg('Could not save key: ' + e.message, true);
+  } finally {
+    // Always reset the button, even on the success path where the card is re-rendered.
+    btn.disabled = false; btn.textContent = 'Save';
   }
 }
 
@@ -229,8 +258,9 @@ async function loadUsage() {
   barMsg(`Updated ${new Date().toLocaleTimeString()}`);
 }
 
-loadSettings();
-loadUsage();
+loadSettings();   // instant
+loadUsage();      // instant
+loadModels();     // fills the dropdown when the providers answer
 </script>
 </body>
 </html>

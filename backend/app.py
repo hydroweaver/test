@@ -396,6 +396,13 @@ class SettingsUpdate(BaseModel):
     model: str
 
 
+@admin_router.get("/models")
+def admin_models():
+    """Live model lists - separate from /settings because this makes a network call
+    to each provider and must never block the page or the key-save button."""
+    return {provider: list_models(provider) for provider in PROVIDERS}
+
+
 @admin_router.post("/settings")
 def admin_update_settings(req: SettingsUpdate):
     if req.provider not in PROVIDERS:
