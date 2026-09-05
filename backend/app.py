@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client as TwilioClient
@@ -311,14 +312,17 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
         media_url = form.get("MediaUrl0", "")
         content_type = form.get("MediaContentType0", "")
         try:
-            blob, ctype = media.download_twilio_media(media_url)
+            # Downloading and transcribing are blocking network calls; running them
+            # directly in this async handler would freeze the event loop (and with it
+            # every other request) until they finish.
+            blob, ctype = await run_in_threadpool(media.download_twilio_media, media_url)
             if content_type.startswith("image/") or ctype.startswith("image/"):
                 media_kind = "image"
                 image = media.encode_image(blob, ctype)
                 body = body or "(the customer sent this image)"
             elif content_type.startswith("audio/") or ctype.startswith("audio/"):
                 media_kind = "audio"
-                body = media.transcribe_audio(blob, ctype)
+                body = await run_in_threadpool(media.transcribe_audio, blob, ctype)
             else:
                 media_kind = "unsupported"
                 body = body or f"(the customer sent a {ctype} file, which you can't open)"
