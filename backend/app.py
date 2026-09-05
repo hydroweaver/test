@@ -55,11 +55,11 @@ def _startup():
     first_provider = next(iter(DEFAULT_MODELS))
     db.init_db(first_provider, DEFAULT_MODELS[first_provider])
     crm.seed()
-    # Replies go out over Twilio's API only. Say so at boot rather than letting every
-    # exchange fail one at a time in the usage log.
+    print(f"Reply delivery mode: {REPLY_MODE}")
+    # Only the API mode needs credentials to reply; inline replies need none.
     missing = _missing_send_config()
-    if missing:
-        print(f"WARNING: WhatsApp replies cannot be sent - not set: {', '.join(missing)}")
+    if missing and REPLY_MODE == "api":
+        print(f"WARNING: REPLY_MODE=api but these are not set: {', '.join(missing)}")
 
 
 # ---------------------------------------------------------------------------
@@ -271,13 +271,22 @@ async def twilio_status_webhook(request: Request):
     return Response(status_code=204)
 
 
+# How replies get delivered. "inline" returns the reply in the webhook response -
+# no from-number, no async send, no 24-hour-window juggling, because Twilio is just
+# reading the answer to its own request. That is how this bot delivered replies for
+# most of its life, and it is the default for that reason. Its one limit is Twilio's
+# ~15s webhook timeout, so a slow model needs REPLY_MODE=api instead.
+REPLY_MODE = os.environ.get("REPLY_MODE", "inline").strip().lower()
+INLINE_TIMEOUT_S = 13  # Twilio gives a webhook ~15s; leave headroom
+
+
 def _handle_message(
     from_number: str, body: str, image: dict | None, media_kind: str,
-    note: str | None = None,
+    note: str | None = None, send: bool = True, started: float | None = None,
 ) -> str:
-    """Runs the agent, logs the exchange, and delivers the reply via Twilio's API.
-    Always called in the background, so a slow exchange (transcription + tool calls +
-    speech) can take as long as it needs - the webhook has already been answered."""
+    """Runs the agent, logs the exchange, and (when `send`) delivers the reply via
+    Twilio's API. Returns the reply text either way, so the caller can put it in the
+    webhook response instead when replying inline."""
     conversation_id = db.get_or_create_conversation(from_number)
     history = db.get_recent_messages(conversation_id, limit=6)
     settings = db.get_settings()
@@ -316,14 +325,22 @@ def _handle_message(
 
     # Send first, then write exactly one usage row for this exchange - one incoming
     # message, its one reply, and every token spent producing it.
-    try:
-        sids = _send_whatsapp(from_number, reply_text, reply_media)
-        # Record the Twilio SIDs so "logged but never arrived" is diagnosable:
-        # no SID here means we never handed it to Twilio at all.
-        error = (error + " | " if error else "") + f"sent ✓ {sids}"
-    except Exception as e:
-        error = (error + " | " if error else "") + f"send failed: {e}"
-        print(f"send failed for {from_number}: {e}")
+    if not send:
+        elapsed = time.time() - started if started else 0
+        note_text = f"replied inline ({elapsed:.0f}s)"
+        if elapsed > INLINE_TIMEOUT_S:
+            note_text = (f"NOT DELIVERED: took {elapsed:.0f}s, over Twilio's ~15s webhook "
+                         f"limit. Set REPLY_MODE=api for models this slow.")
+        error = (error + " | " if error else "") + note_text
+    else:
+        try:
+            sids = _send_whatsapp(from_number, reply_text, reply_media)
+            # Record the Twilio SIDs so "logged but never arrived" is diagnosable:
+            # no SID here means we never handed it to Twilio at all.
+            error = (error + " | " if error else "") + f"sent ✓ {sids}"
+        except Exception as e:
+            error = (error + " | " if error else "") + f"send failed: {e}"
+            print(f"send failed for {from_number}: {e}")
 
     cost = calculate_cost(
         provider, model, result.input_tokens, result.output_tokens,
@@ -401,12 +418,20 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
     if not body:
         raise HTTPException(status_code=400, detail="Nothing to reply to")
 
-    # One delivery path: ack Twilio instantly with an empty response, then answer via
-    # Twilio's API from a background task, which has no time limit. (Replying inline
-    # in this response would need no credentials, but Twilio drops any webhook that
-    # takes over ~15s - so a slow model's reply would be billed and never delivered.)
-    background.add_task(_handle_message, from_number, body, image, media_kind, media_error)
-    return Response(content=str(MessagingResponse()), media_type="application/xml")
+    if REPLY_MODE == "api":
+        # Ack instantly, answer from a background task via Twilio's API - no time
+        # limit, so this is the mode for models slower than the webhook timeout.
+        background.add_task(_handle_message, from_number, body, image, media_kind,
+                            media_error, True, None)
+        return Response(content=str(MessagingResponse()), media_type="application/xml")
+
+    # Inline: generate the reply now and hand it back in this response. Blocking work
+    # goes to the threadpool so it can't freeze the event loop while it runs.
+    reply_text = await run_in_threadpool(
+        _handle_message, from_number, body, image, media_kind, media_error, False, time.time())
+    twiml = MessagingResponse()
+    twiml.message(reply_text)
+    return Response(content=str(twiml), media_type="application/xml")
 
 
 # ---------------------------------------------------------------------------

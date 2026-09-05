@@ -53,14 +53,17 @@ turns) counted against it - so per-reply cost is directly comparable.
    admin page's *Test WhatsApp* button) is accepted by Twilio and then dropped by
    WhatsApp with error 63016. The usage log now records that verdict.
 
-   There is one delivery path: the webhook is acked instantly and the reply is sent
-   from a background task via Twilio's API, which has no time limit - so a model that
-   takes 30s still gets its answer delivered, and every row records the Twilio message
-   SID as proof. (Replying inline in the webhook response would need no credentials,
-   but Twilio drops any webhook over ~15s, which silently loses slow models' replies -
-   so that path is gone.) Without the credentials nothing can be sent: the app warns at
-   startup and every row logs `send failed`. They are also what lets the bot fetch
-   incoming images and voice notes.
+   **Two delivery modes, set with `REPLY_MODE`:**
+   - `inline` (default) - the reply goes back in the webhook response itself. Twilio
+     is reading the answer to its own request, so there's no sender number to get
+     wrong, nothing async to lose, and no credentials needed. Its one limit is
+     Twilio's ~15s webhook timeout: a slower model's reply is generated, billed, and
+     dropped (the usage row says so).
+   - `api` - ack instantly and send from a background task via Twilio's API. No time
+     limit, so this is the mode for slow/reasoning models, and every row records the
+     message SID. Needs the credentials above.
+
+   The credentials are required either way to fetch incoming images and voice notes.
 
 That's it - message the Twilio WhatsApp number and watch replies + token/cost show up
 in `/admin`. (Optional: attach a Railway Volume mounted at `/data` and set
