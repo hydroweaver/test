@@ -39,8 +39,8 @@ def _key(provider: str) -> str:
     key = db.resolve_api_key(provider)
     if not key:
         raise ProviderError(
-            f"No API key configured for '{provider}'. Set it via the admin page or "
-            f"the {provider.upper()}_API_KEY env var."
+            f"No API key configured for '{provider}'. Set the "
+            f"{provider.upper()}_API_KEY env var."
         )
     return key
 

@@ -54,6 +54,11 @@ def _startup():
     first_provider = next(iter(DEFAULT_MODELS))
     db.init_db(first_provider, DEFAULT_MODELS[first_provider])
     crm.seed()
+    # Replies go out over Twilio's API only. Say so at boot rather than letting every
+    # exchange fail one at a time in the usage log.
+    missing = _missing_send_config()
+    if missing:
+        print(f"WARNING: WhatsApp replies cannot be sent - not set: {', '.join(missing)}")
 
 
 # ---------------------------------------------------------------------------
@@ -208,17 +213,13 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
     return ",".join(sids)
 
 
-INLINE_TIMEOUT_S = 13  # Twilio gives a webhook ~15s; leave headroom
-
-
 def _handle_message(
-    from_number: str, body: str, image: dict | None, media_kind: str, send: bool = True,
-    note: str | None = None, started: float | None = None,
+    from_number: str, body: str, image: dict | None, media_kind: str,
+    note: str | None = None,
 ) -> str:
-    """Runs the agent, logs the exchange, and (when `send`) delivers the reply via
-    Twilio's API. Normally called in the background so a slow exchange (transcription
-    + tool calls + speech) can't hit Twilio's webhook timeout. Returns the reply text
-    so the caller can deliver it inline instead when async sending isn't configured."""
+    """Runs the agent, logs the exchange, and delivers the reply via Twilio's API.
+    Always called in the background, so a slow exchange (transcription + tool calls +
+    speech) can take as long as it needs - the webhook has already been answered."""
     conversation_id = db.get_or_create_conversation(from_number)
     history = db.get_recent_messages(conversation_id, limit=6)
     settings = db.get_settings()
@@ -257,20 +258,14 @@ def _handle_message(
 
     # Send first, then write exactly one usage row for this exchange - one incoming
     # message, its one reply, and every token spent producing it.
-    if not send and started is not None and time.time() - started > INLINE_TIMEOUT_S:
-        error = ((error + " | ") if error else "") + (
-            f"NOT DELIVERED: took {time.time() - started:.0f}s, over Twilio's ~15s webhook "
-            f"limit. Set TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN to send without a time limit."
-        )
-
-    if send:
-        try:
-            sids = _send_whatsapp(from_number, reply_text, reply_media)
-            # Record the Twilio SIDs so "logged but never arrived" is diagnosable:
-            # no SID here means we never handed it to Twilio at all.
-            error = (error + " | " if error else "") + f"sent ✓ {sids}"
-        except Exception as e:
-            error = (error + " | " if error else "") + f"send failed: {e}"
+    try:
+        sids = _send_whatsapp(from_number, reply_text, reply_media)
+        # Record the Twilio SIDs so "logged but never arrived" is diagnosable:
+        # no SID here means we never handed it to Twilio at all.
+        error = (error + " | " if error else "") + f"sent ✓ {sids}"
+    except Exception as e:
+        error = (error + " | " if error else "") + f"send failed: {e}"
+        print(f"send failed for {from_number}: {e}")
 
     cost = calculate_cost(
         provider, model, result.input_tokens, result.output_tokens,
@@ -348,24 +343,11 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
     if not body:
         raise HTTPException(status_code=400, detail="Nothing to reply to")
 
-    missing = _missing_send_config()
-    if missing:
-        # No Twilio API credentials, so we can't send a message ourselves. Replying
-        # inline (TwiML in this response) needs no credentials at all - Twilio is
-        # reading the answer to its own request - so it's the only way to deliver
-        # anything here. Its limit is Twilio's ~15s webhook timeout: a slower reply
-        # is generated, billed and logged, but silently dropped before it reaches
-        # the phone. That's flagged on the row rather than left invisible.
-        reply_text = _handle_message(
-            from_number, body, image, media_kind, send=False,
-            note=f"replied inline (no {', '.join(missing)})", started=time.time(),
-        )
-        twiml = MessagingResponse()
-        twiml.message(reply_text)
-        return Response(content=str(twiml), media_type="application/xml")
-
-    # Credentials present: ack instantly and send via the API, which has no timeout.
-    background.add_task(_handle_message, from_number, body, image, media_kind, True, media_error)
+    # One delivery path: ack Twilio instantly with an empty response, then answer via
+    # Twilio's API from a background task, which has no time limit. (Replying inline
+    # in this response would need no credentials, but Twilio drops any webhook that
+    # takes over ~15s - so a slow model's reply would be billed and never delivered.)
+    background.add_task(_handle_message, from_number, body, image, media_kind, media_error)
     return Response(content=str(MessagingResponse()), media_type="application/xml")
 
 

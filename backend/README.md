@@ -37,15 +37,20 @@ turns) counted against it - so per-reply cost is directly comparable.
    configured, and pick the active provider/model.
 4. Crawl the target site once so the bot has something to answer from:
    `railway run python crawl.py https://www.example.com`
-5. For WhatsApp, set these env vars - **all four matter**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
-   `TWILIO_WHATSAPP_NUMBER` (the sandbox number is `+14155238886`) and
-   `PUBLIC_BASE_URL` (your Railway URL). Then in the Twilio console point the WhatsApp
-   number's incoming-message webhook at `<your-railway-url>/webhook/whatsapp`.
-   Without `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` the bot falls back to replying
-   inline in the webhook response. That works with no credentials at all, but Twilio
-   drops any reply that takes longer than ~15s - so a slow model's answers are
-   generated, billed, and never delivered (the usage log flags this). Those two
-   credentials are also what lets the bot fetch incoming images and voice notes.
+5. For WhatsApp, set these env vars - **all four are required**: `TWILIO_ACCOUNT_SID`,
+   `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` (the sandbox number is
+   `+14155238886`) and `PUBLIC_BASE_URL` (your Railway URL). Then in the Twilio console
+   point the WhatsApp number's incoming-message webhook at
+   `<your-railway-url>/webhook/whatsapp`.
+
+   There is one delivery path: the webhook is acked instantly and the reply is sent
+   from a background task via Twilio's API, which has no time limit - so a model that
+   takes 30s still gets its answer delivered, and every row records the Twilio message
+   SID as proof. (Replying inline in the webhook response would need no credentials,
+   but Twilio drops any webhook over ~15s, which silently loses slow models' replies -
+   so that path is gone.) Without the credentials nothing can be sent: the app warns at
+   startup and every row logs `send failed`. They are also what lets the bot fetch
+   incoming images and voice notes.
 
 That's it - message the Twilio WhatsApp number and watch replies + token/cost show up
 in `/admin`. (Optional: attach a Railway Volume mounted at `/data` and set
@@ -71,7 +76,7 @@ uvicorn app:app --reload
 ```bash
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"provider": "anthropic", "message": "What does this site offer?"}'
+  -d '{"provider": "openai", "message": "What does this site offer?"}'
 ```
 
 Returns the reply plus `usage` (exact tokens, summed across every tool-call turn),
