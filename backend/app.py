@@ -195,6 +195,9 @@ TWILIO_ERROR_HINTS = {
     63007: "No WhatsApp sender found for TWILIO_WHATSAPP_NUMBER on this account.",
     63016: "Outside the 24-hour customer service window - free-form messages are only "
            "allowed within 24h of their last message. Message the bot, then retry.",
+    63015: "WhatsApp couldn't deliver it - the number may not be on WhatsApp.",
+    63024: "Twilio rejected the message body (empty, too long, or bad media URL).",
+    63003: "Twilio couldn't find that recipient on WhatsApp.",
 }
 
 
@@ -216,6 +219,11 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
     chunks = [body[i:i + WHATSAPP_MAX_CHARS] for i in range(0, len(body), WHATSAPP_MAX_CHARS)] or [""]
     client = TwilioClient(sid, token)
     urls = [u for u in (media.public_url(f) for f in media_files) if u]
+    # Twilio accepting a WhatsApp message only means it queued. Delivery can still
+    # fail seconds later (expired sandbox join, outside the 24h window) and that
+    # verdict only ever arrives here, on a status callback.
+    base = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    status_callback = f"{base}/webhook/twilio-status" if base else None
     sids = []
     for i, chunk in enumerate(chunks):
         msg = client.messages.create(
@@ -223,9 +231,35 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
             to=f"whatsapp:{to_number}",
             body=chunk,
             media_url=(urls or None) if i == len(chunks) - 1 else None,  # media on the last part
+            **({"status_callback": status_callback} if status_callback else {}),
         )
         sids.append(msg.sid)
     return ",".join(sids)
+
+
+@app.post("/webhook/twilio-status")
+async def twilio_status_webhook(request: Request):
+    """Twilio reports each message's final state here (delivered / undelivered /
+    failed, with an error code). Recorded against the row that sent it, so the log
+    shows what actually happened rather than only what we attempted."""
+    form = await request.form()
+    sid = form.get("MessageSid", "")
+    status = form.get("MessageStatus", "")
+    code = form.get("ErrorCode", "")
+    if not sid:
+        return Response(status_code=204)
+
+    note = f"delivery: {status}"
+    if code:
+        try:
+            hint = TWILIO_ERROR_HINTS.get(int(code), "")
+        except ValueError:
+            hint = ""
+        note += f" (Twilio error {code}{' - ' + hint if hint else ''})"
+    if status in ("failed", "undelivered"):
+        print(f"WhatsApp NOT delivered [{sid}]: {note}")
+    await run_in_threadpool(db.note_delivery, sid, note)
+    return Response(status_code=204)
 
 
 def _handle_message(
@@ -558,13 +592,33 @@ def admin_twilio_test(req: WhatsAppTest):
 
     try:
         sid = _send_whatsapp(to, "Test message from your admin page ✅", [])
-        return {"ok": True, "stage": "sent", "message_sid": sid,
-                "note": "Twilio accepted it. If it doesn't arrive, the number hasn't "
-                        "joined the WhatsApp sandbox (or its 72-hour join expired)."}
     except Exception as e:
         code = getattr(e, "code", None)
         return {"ok": False, "stage": "twilio", "error": str(e),
                 "twilio_code": code, "hint": TWILIO_ERROR_HINTS.get(code, "")}
+
+    # Accepting is not delivering. WhatsApp messages routinely queue fine and then
+    # fail a few seconds later, so wait for the verdict instead of reporting the
+    # send as a success and leaving you to wonder why nothing arrived.
+    client = TwilioClient(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+    status, code = "queued", None
+    for _ in range(6):
+        time.sleep(1.5)
+        msg = client.messages(sid.split(",")[0]).fetch()
+        status, code = msg.status, msg.error_code
+        if status in ("delivered", "read", "failed", "undelivered"):
+            break
+
+    delivered = status in ("delivered", "read")
+    hint = TWILIO_ERROR_HINTS.get(code, "") if code else ""
+    if not delivered and not hint:
+        hint = ("Twilio took it but WhatsApp hasn't confirmed delivery. The usual cause "
+                "is the sandbox join expiring - send 'join <your-code>' to the sandbox "
+                "number from this phone, then try again."
+                if status in ("queued", "sent", "accepted")
+                else "Check the message in Twilio's console for the full reason.")
+    return {"ok": delivered, "stage": "delivery", "message_sid": sid,
+            "status": status, "twilio_code": code, "hint": hint}
 
 
 app.include_router(admin_router)

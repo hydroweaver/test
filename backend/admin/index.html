@@ -129,7 +129,11 @@ async function testWhatsApp(btn) {
       body: JSON.stringify({to: to}),
     });
     if (r.ok) {
-      barMsg(`Twilio accepted it (${r.message_sid}). ${r.note}`);
+      barMsg(`Delivered ✅ (${r.status})`);
+    } else if (r.stage === 'delivery') {
+      // Twilio took it but it didn't land - the status is the real answer.
+      barMsg(`Not delivered: ${r.status}${r.twilio_code ? ' (error ' + r.twilio_code + ')' : ''}`
+             + (r.hint ? ' — ' + r.hint : ''), true);
     } else {
       barMsg(`${r.error}${r.hint ? ' — ' + r.hint : ''}`, true);
     }

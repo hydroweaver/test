@@ -328,6 +328,26 @@ def log_usage(
         )
 
 
+def note_delivery(message_sid: str, note: str) -> bool:
+    """Appends Twilio's final delivery verdict to the row that sent that message.
+
+    The row records the SID we got when Twilio ACCEPTED the message; whether it was
+    actually delivered arrives later, on a status callback. Without this the log
+    can only ever say "we handed it over", which is exactly the gap that made
+    undelivered replies impossible to diagnose.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, error FROM usage_log WHERE error LIKE ? ORDER BY id DESC LIMIT 1",
+            (f"%{message_sid}%",),
+        ).fetchone()
+        if not row:
+            return False
+        conn.execute("UPDATE usage_log SET error = ? WHERE id = ?",
+                     (f"{row['error']} | {note}", row["id"]))
+    return True
+
+
 def get_usage(limit: int = 50, offset: int = 0) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
