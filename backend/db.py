@@ -8,8 +8,6 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
-from cryptography.fernet import Fernet, InvalidToken
-
 DB_PATH = os.environ.get("DB_PATH", "./data/app.db")
 
 SCHEMA = """
@@ -78,11 +76,6 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS provider_keys (
-    provider TEXT PRIMARY KEY,
-    encrypted_key BLOB NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
 
 -- Toy CRM the bot makes tool calls against, to simulate a real support scenario.
 CREATE TABLE IF NOT EXISTS crm_customers (
@@ -231,86 +224,25 @@ def init_db(default_provider: str, default_model: str) -> None:
             )
 
 
-def _fernet() -> Fernet:
-    key = os.environ.get("SETTINGS_ENCRYPTION_KEY")
-    if key:
-        try:
-            return Fernet(key.encode())
-        except Exception:
-            # Not a real Fernet key (someone set a passphrase). Derive one from it
-            # rather than 500ing on every key save - deterministic, so anything
-            # already encrypted with this passphrase still decrypts.
-            import base64
-            import hashlib
-            derived = base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest())
-            return Fernet(derived)
-    if not key:
-        # Nothing set - auto-generate one and store it next to the DB, so pasted
-        # keys survive restarts without requiring any manual setup. If DB_PATH
-        # itself isn't persisted (no volume), this resets along with it, which is
-        # fine - there's nothing left to decrypt either.
-        key_path = os.path.join(os.path.dirname(DB_PATH) or ".", "secret.key")
-        os.makedirs(os.path.dirname(key_path) or ".", exist_ok=True)
-        if os.path.exists(key_path):
-            key = open(key_path).read().strip()
-        else:
-            key = Fernet.generate_key().decode()
-            with open(key_path, "w") as f:
-                f.write(key)
-    return Fernet(key.encode())
-
-
 def _mask(raw_key: str) -> str:
     if len(raw_key) <= 8:
         return "****"
     return f"{raw_key[:4]}...{raw_key[-4:]}"
 
 
-def set_provider_key(provider: str, raw_key: str) -> str:
-    """Encrypts and stores raw_key for provider. Returns the masked form for display."""
-    encrypted = _fernet().encrypt(raw_key.encode())
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO provider_keys (provider, encrypted_key, updated_at) "
-            "VALUES (?, ?, datetime('now')) "
-            "ON CONFLICT(provider) DO UPDATE SET encrypted_key = excluded.encrypted_key, "
-            "updated_at = excluded.updated_at",
-            (provider, encrypted),
-        )
-    return _mask(raw_key)
-
-
 def resolve_api_key(provider: str) -> str | None:
-    """DB-stored key (pasted via the admin UI) takes precedence; falls back to env var."""
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT encrypted_key FROM provider_keys WHERE provider = ?", (provider,)
-        ).fetchone()
-    if row is not None:
-        try:
-            return _fernet().decrypt(row["encrypted_key"]).decode()
-        except InvalidToken:
-            # SETTINGS_ENCRYPTION_KEY was rotated since this key was saved - treat as absent.
-            pass
+    """Keys come from environment variables only - OPENAI_API_KEY, GEMINI_API_KEY.
+    Set them in Railway so they survive redeploys (the database does not, without a
+    volume attached)."""
     return os.environ.get(f"{provider.upper()}_API_KEY")
 
 
 def key_status(provider: str) -> dict:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT encrypted_key FROM provider_keys WHERE provider = ?", (provider,)
-        ).fetchone()
-    if row is not None:
-        try:
-            raw = _fernet().decrypt(row["encrypted_key"]).decode()
-            return {"configured": True, "source": "database", "masked": _mask(raw)}
-        except InvalidToken:
-            pass
-
-    env_key = os.environ.get(f"{provider.upper()}_API_KEY")
+    env_key = resolve_api_key(provider)
     if env_key:
         return {"configured": True, "source": "env", "masked": _mask(env_key)}
-    return {"configured": False, "source": None, "masked": None}
+    return {"configured": False, "source": None,
+            "masked": None, "hint": f"Set {provider.upper()}_API_KEY in Railway"}
 
 
 def get_settings() -> dict:

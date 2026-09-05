@@ -15,7 +15,7 @@ import crm
 import db
 import media
 from agent import run_agent
-from pricing import calculate_cost, load_pricing
+from pricing import calculate_cost, load_pricing, lookup_rates
 from providers import PROVIDERS, ProviderError, clear_cache, list_models
 
 load_dotenv()
@@ -400,7 +400,13 @@ class SettingsUpdate(BaseModel):
 def admin_models():
     """Live model lists - separate from /settings because this makes a network call
     to each provider and must never block the page or the key-save button."""
-    return {provider: list_models(provider) for provider in PROVIDERS}
+    out = {}
+    for provider in PROVIDERS:
+        info = list_models(provider)
+        # Which of these we can actually cost, accounting for snapshot fallback.
+        info["unpriced"] = [m for m in info["models"] if lookup_rates(provider, m) is None]
+        out[provider] = info
+    return out
 
 
 @admin_router.post("/settings")
@@ -411,22 +417,6 @@ def admin_update_settings(req: SettingsUpdate):
         raise HTTPException(status_code=400, detail=f"No API key configured for '{req.provider}' yet")
     db.update_settings(req.provider, req.model)
     return {"ok": True}
-
-
-class KeyUpdate(BaseModel):
-    provider: str
-    api_key: str
-
-
-@admin_router.post("/keys")
-def admin_set_key(req: KeyUpdate):
-    if req.provider not in PROVIDERS:
-        raise HTTPException(status_code=400, detail=f"Unknown provider '{req.provider}'")
-    if not req.api_key.strip():
-        raise HTTPException(status_code=400, detail="api_key is empty")
-    masked = db.set_provider_key(req.provider, req.api_key.strip())
-    clear_cache(req.provider)  # so the model list reloads with the new key
-    return {"provider": req.provider, "masked": masked, "source": "database"}
 
 
 @admin_router.get("/usage")

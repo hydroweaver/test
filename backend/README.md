@@ -30,8 +30,8 @@ turns) counted against it - so per-reply cost is directly comparable.
 1. Deploy this repo to Railway, with **root directory set to `backend`** (Railway
    project → Settings → Root Directory) - that's where `requirements.txt` and the
    `Procfile` live.
-2. Set at least one provider key as a Railway env var (`ANTHROPIC_API_KEY`,
-   `OPENAI_API_KEY`, or `GEMINI_API_KEY`) - or skip this and paste it into `/admin`
+2. Set at least one provider key as a Railway env var (`OPENAI_API_KEY`
+   or `GEMINI_API_KEY`). These are the only way keys are supplied.
    after deploying. Everything else has a working default; nothing else is required
    to get the app up.
 3. Once deployed, visit `https://<your-app>.up.railway.app/admin` (login `admin`/

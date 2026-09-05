@@ -51,19 +51,6 @@
   .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
           padding: 0 .3rem; font-size: .62rem; font-weight: 700; text-transform: uppercase; }
 
-  /* keys tucked away - open only when you need to paste one */
-  details.keys { margin-bottom: 1rem; }
-  details.keys summary { cursor: pointer; font-size: .8rem; color: var(--muted); padding: .3rem 0; }
-  .provider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-                   gap: .8rem; margin-top: .6rem; }
-  .provider-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem; }
-  .provider-name { font-weight: 700; font-size: .9rem; text-transform: capitalize; margin-bottom: .35rem; }
-  .pill { display: inline-block; padding: .12rem .5rem; border-radius: 999px; font-size: .7rem;
-          font-weight: 600; margin-bottom: .6rem; }
-  .pill.ok { color: var(--good); background: var(--good-bg); }
-  .pill.no { color: var(--bad); background: var(--bad-bg); }
-  .key-row { display: flex; gap: .4rem; }
-  .key-row input { flex: 1; padding: .45rem; font-size: .82rem; border: 1px solid var(--border); border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -73,15 +60,11 @@
   <select id="model-select" title="Provider and model"></select>
   <button id="save-model" onclick="saveSettings(this)">Set active</button>
   <button class="secondary" onclick="loadUsage()">Refresh</button>
+  <span class="bar-msg" id="keys-status"></span>
   <span class="bar-msg" id="bar-msg"></span>
 </div>
 
 <main>
-  <details class="keys">
-    <summary>API keys — encrypted, effective immediately, no redeploy</summary>
-    <div class="provider-grid" id="providers"></div>
-  </details>
-
   <div class="stats" id="totals"></div>
 
   <table id="usage-table">
@@ -130,7 +113,6 @@ let modelLists = {};
 // Fast: key status + active model, straight from the DB. Never waits on a network call.
 async function loadSettings() {
   currentSettings = await api('/admin/settings');
-  renderProviders();
   renderModelSelect();
 }
 
@@ -156,7 +138,10 @@ function renderModelSelect() {
     const live = modelLists[provider] || {};
     // Priced models until the live list arrives, then whatever the provider reports.
     const models = (live.models && live.models.length) ? live.models : info.priced_models;
-    const priced = new Set(info.priced_models || []);
+    // Only flag models we genuinely can't cost (the backend accounts for snapshots
+    // inheriting their base model's rates).
+    const unpriced = new Set(live.unpriced || []);
+    const priced = { has: m => !unpriced.has(m) };
     html += `<optgroup label="${esc(provider)}${
       live.live ? ' — ' + models.length + ' models' : (live.note ? ' (partial list)' : ' …')}">` +
       models.map(m => {
@@ -166,6 +151,9 @@ function renderModelSelect() {
       }).join('') + '</optgroup>';
   }
   sel.innerHTML = html;
+  document.getElementById('keys-status').innerHTML = Object.entries(currentSettings.providers)
+    .map(([n, i]) => `${esc(n)}: <b style="color:${i.configured ? 'var(--good)' : 'var(--bad)'}">`
+      + (i.configured ? esc(i.masked) : 'set ' + n.toUpperCase() + '_API_KEY') + '</b>').join(' · ');
   document.getElementById('active-label').textContent =
     `· ${currentSettings.active_provider} / ${currentSettings.active_model}`;
 }
@@ -184,48 +172,6 @@ async function saveSettings(btn) {
     barMsg(e.message, true);
   }
   btn.disabled = false; btn.textContent = 'Set active';
-}
-
-function renderProviders() {
-  const el = document.getElementById('providers');
-  el.innerHTML = '';
-  for (const [name, info] of Object.entries(currentSettings.providers)) {
-    const div = document.createElement('div');
-    div.className = 'provider-card';
-    div.innerHTML = `
-      <div class="provider-name">${esc(name)}</div>
-      <span class="pill ${info.configured ? 'ok' : 'no'}">${
-        info.configured ? esc(info.masked) + ' · ' + esc(info.source) : 'not configured'}</span>
-      <div class="key-row">
-        <input type="password" id="key-${esc(name)}" placeholder="paste key">
-        <button onclick="saveKey('${esc(name)}', this)">Save</button>
-      </div>`;
-    el.appendChild(div);
-  }
-}
-
-async function saveKey(provider, btn) {
-  const input = document.getElementById('key-' + provider);
-  if (!input.value.trim()) return;
-  btn.disabled = true; btn.textContent = 'Saving…';
-  try {
-    const saved = await api('/admin/keys', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({provider, api_key: input.value.trim()}),
-    });
-    input.value = '';
-    // Update straight from the save response - no reload, no waiting on anything.
-    Object.assign(currentSettings.providers[provider],
-                  {configured: true, masked: saved.masked, source: saved.source});
-    renderProviders();
-    barMsg(`${provider} key saved ✓`);
-    loadModels();          // refresh the dropdown in the background
-  } catch (e) {
-    barMsg('Could not save key: ' + e.message, true);
-  } finally {
-    // Always reset the button, even on the success path where the card is re-rendered.
-    btn.disabled = false; btn.textContent = 'Save';
-  }
 }
 
 async function loadUsage() {

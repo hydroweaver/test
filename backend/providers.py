@@ -51,7 +51,8 @@ def _openai_models(api_key: str) -> list[str]:
     ids = [m.id for m in OpenAI(api_key=api_key).models.list()]
     # Chat-capable models only - skip embeddings, audio, image, moderation etc.
     skip = ("embedding", "whisper", "tts", "dall-e", "moderation", "image", "realtime",
-            "transcribe", "audio", "codex", "search", "computer-use")
+            "transcribe", "audio", "codex", "search", "computer-use", "sora", "video",
+            "guard", "babbage", "davinci", "instruct")
     chat = [i for i in ids if not any(s in i.lower() for s in skip)]
     return sorted(chat, reverse=True)
 
