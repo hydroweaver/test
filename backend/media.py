@@ -39,10 +39,20 @@ def public_url(filename: str) -> str | None:
 
 
 def download_twilio_media(url: str) -> tuple[bytes, str]:
-    """Twilio media URLs need account auth. Returns (bytes, content_type)."""
-    sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    token = os.environ.get("TWILIO_AUTH_TOKEN")
-    resp = requests.get(url, auth=(sid, token) if sid and token else None, timeout=30)
+    """Twilio media URLs need account auth. Returns (bytes, content_type).
+
+    Accepts either credential pair: an API key (SK... + secret) authenticates here
+    exactly like the account SID + auth token does.
+    """
+    key_sid = os.environ.get("TWILIO_API_KEY_SID")
+    key_secret = os.environ.get("TWILIO_API_KEY_SECRET")
+    if key_sid and key_secret:
+        auth = (key_sid, key_secret)
+    else:
+        sid = os.environ.get("TWILIO_ACCOUNT_SID")
+        token = os.environ.get("TWILIO_AUTH_TOKEN")
+        auth = (sid, token) if sid and token else None
+    resp = requests.get(url, auth=auth, timeout=30)
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 

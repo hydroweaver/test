@@ -170,15 +170,58 @@ def serve_media(filename: str):
     return FileResponse(path)
 
 
+def twilio_auth() -> tuple[str, str, str] | None:
+    """The (username, password, account_sid) to authenticate to Twilio with.
+
+    Twilio issues two kinds of credentials and they are NOT interchangeable:
+      - Account SID (AC...) + Auth Token, the account-level pair;
+      - API Key SID (SK...) + Secret, which is what the console hands you when you
+        create an API key - and which still needs the AC... account SID alongside it,
+        because that's what identifies the account in the request URL.
+    Supporting only the first meant an API key could never work.
+    """
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    key_sid = os.environ.get("TWILIO_API_KEY_SID", "")
+    key_secret = os.environ.get("TWILIO_API_KEY_SECRET", "")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+
+    if key_sid and key_secret and account_sid:
+        return key_sid, key_secret, account_sid
+    if account_sid and auth_token:
+        return account_sid, auth_token, account_sid
+    return None
+
+
+def twilio_client() -> TwilioClient:
+    auth = twilio_auth()
+    if not auth:
+        raise RuntimeError(f"Twilio credentials incomplete: {', '.join(_missing_send_config())}")
+    username, password, account_sid = auth
+    return TwilioClient(username, password, account_sid)
+
+
 def _missing_send_config() -> list[str]:
-    """Which env vars are missing for sending replies via Twilio's API."""
-    return [
-        name for name, value in (
-            ("TWILIO_ACCOUNT_SID", os.environ.get("TWILIO_ACCOUNT_SID")),
-            ("TWILIO_AUTH_TOKEN", os.environ.get("TWILIO_AUTH_TOKEN")),
-            ("TWILIO_WHATSAPP_NUMBER", TWILIO_WHATSAPP_NUMBER),
-        ) if not value
-    ]
+    """What's missing before replies can be sent through Twilio's API."""
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    key_sid = os.environ.get("TWILIO_API_KEY_SID", "")
+    key_secret = os.environ.get("TWILIO_API_KEY_SECRET", "")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+
+    missing = []
+    if not account_sid:
+        missing.append("TWILIO_ACCOUNT_SID (the AC... one)")
+    elif not account_sid.startswith("AC"):
+        # An API key SID pasted in here silently addresses a non-existent account.
+        missing.append(f"TWILIO_ACCOUNT_SID must be the AC... account SID, not '{account_sid[:4]}...'")
+    if not ((key_sid and key_secret) or auth_token):
+        missing.append("TWILIO_AUTH_TOKEN, or TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET")
+    elif key_sid and not key_secret:
+        missing.append("TWILIO_API_KEY_SECRET")
+    elif key_secret and not key_sid:
+        missing.append("TWILIO_API_KEY_SID")
+    if not TWILIO_WHATSAPP_NUMBER:
+        missing.append("TWILIO_WHATSAPP_NUMBER")
+    return missing
 
 
 WHATSAPP_MAX_CHARS = 1500  # Twilio rejects WhatsApp bodies over 1600
@@ -186,7 +229,8 @@ WHATSAPP_MAX_CHARS = 1500  # Twilio rejects WhatsApp bodies over 1600
 # The handful of Twilio error codes that actually explain a silently undelivered
 # WhatsApp reply, in plain English.
 TWILIO_ERROR_HINTS = {
-    20003: "Authentication failed - TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is wrong.",
+    20003: "Authentication failed - check TWILIO_AUTH_TOKEN, or the API key pair "
+           "(TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET) against TWILIO_ACCOUNT_SID.",
     21606: "TWILIO_WHATSAPP_NUMBER isn't a WhatsApp-enabled sender on this account.",
     21608: "Number not permitted to receive from this sender (a trial account, or an "
            "unjoined sandbox).",
@@ -214,8 +258,6 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
     """Sends the reply, returning the Twilio message SIDs so a successful send is
     provable. Long replies are split - Twilio rejects the whole message otherwise,
     which is how a reply ends up in the log but never on the phone."""
-    sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    token = os.environ.get("TWILIO_AUTH_TOKEN")
     missing = _missing_send_config()
     if missing:
         raise RuntimeError(f"Can't send reply - these env vars are not set: {', '.join(missing)}")
@@ -226,7 +268,7 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
         body = "Sorry, I couldn't put together an answer for that. Try rephrasing? 🙏"
 
     chunks = [body[i:i + WHATSAPP_MAX_CHARS] for i in range(0, len(body), WHATSAPP_MAX_CHARS)] or [""]
-    client = TwilioClient(sid, token)
+    client = twilio_client()
     urls = [u for u in (media.public_url(f) for f in media_files) if u]
     # Twilio accepting a WhatsApp message only means it queued. Delivery can still
     # fail seconds later (expired sandbox join, outside the 24h window) and that
@@ -634,7 +676,7 @@ def admin_twilio_test(req: WhatsAppTest):
     # Accepting is not delivering. WhatsApp messages routinely queue fine and then
     # fail a few seconds later, so wait for the verdict instead of reporting the
     # send as a success and leaving you to wonder why nothing arrived.
-    client = TwilioClient(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+    client = twilio_client()
     status, code = "queued", None
     for _ in range(6):
         time.sleep(1.5)

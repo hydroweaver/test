@@ -65,6 +65,14 @@ turns) counted against it - so per-reply cost is directly comparable.
 
    The credentials are required either way to fetch incoming images and voice notes.
 
+   **Either Twilio credential pair works.** `TWILIO_ACCOUNT_SID` (the `AC…` one) is
+   always required - it identifies the account rather than authenticating you - plus
+   *either* `TWILIO_AUTH_TOKEN` *or* an API key: `TWILIO_API_KEY_SID` (`SK…`) and
+   `TWILIO_API_KEY_SECRET`. Don't put the `SK…` key into `TWILIO_ACCOUNT_SID`; the app
+   flags it if you do. Note that webhook signature checking
+   (`VERIFY_TWILIO_SIGNATURE=1`) needs the auth token specifically - Twilio signs with
+   that, not with an API key secret.
+
 That's it - message the Twilio WhatsApp number and watch replies + token/cost show up
 in `/admin`. (Optional: attach a Railway Volume mounted at `/data` and set
 `DB_PATH=/data/app.db` if you want the usage log/crawled content to survive a
