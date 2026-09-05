@@ -66,6 +66,7 @@
   td.dim { vertical-align: top; color: var(--muted); }
   .tiny { font-size: .68rem; color: var(--muted); }
   .err { color: var(--bad); font-size: .72rem; margin-top: .25rem; white-space: normal; }
+  .cached { color: var(--good); font-size: .66rem; }
   .kind { display: inline-block; background: #eef2ff; color: var(--accent); border-radius: 4px;
           padding: 0 .3rem; font-size: .65rem; font-weight: 700; text-transform: uppercase; }
   tr:hover td { background: #fafafa; }
@@ -228,6 +229,7 @@ async function loadUsage() {
   document.getElementById('totals').innerHTML = `
     <div class="stat"><div class="label">Requests</div><div class="value">${t.count}</div></div>
     <div class="stat"><div class="label">Input tokens</div><div class="value">${t.input_tokens}</div></div>
+    <div class="stat"><div class="label">Cached (cheap)</div><div class="value">${t.cache_read_tokens ?? 0}</div></div>
     <div class="stat"><div class="label">Output tokens</div><div class="value">${t.output_tokens}</div></div>
     <div class="stat"><div class="label">Cost (USD)</div><div class="value">$${(t.cost_usd || 0).toFixed(4)}</div></div>
   `;
@@ -241,7 +243,8 @@ async function loadUsage() {
         r.error ? '<div class="err">' + esc(r.error) + '</div>' : ''}</td>
       <td class="dim">${esc(r.model)}<br><span class="tiny">${r.tool_call_count} tools · ${r.turn_count} turns · ${
         r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + 's' : '-'}</span></td>
-      <td>${r.input_tokens}</td><td>${r.output_tokens}</td>
+      <td>${r.input_tokens}${r.cache_read_tokens ? '<br><span class="cached">+' + r.cache_read_tokens + ' cached</span>' : ''}</td>
+      <td>${r.output_tokens}</td>
       <td>${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
     </tr>`).join('') : `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem;">No requests yet.</td></tr>`;
   usageMsg.textContent = `Updated ${new Date().toLocaleTimeString()}`;

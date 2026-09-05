@@ -128,6 +128,8 @@ MIGRATIONS = [
     ("usage_log", "user_message", "TEXT"),
     ("usage_log", "reply_text", "TEXT"),
     ("usage_log", "media_kind", "TEXT"),
+    ("usage_log", "cache_read_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ("usage_log", "cache_write_tokens", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -300,6 +302,8 @@ def log_usage(
     user_message: str | None = None,
     reply_text: str | None = None,
     media_kind: str | None = None,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> None:
     """One row per exchange: exactly one incoming message and the reply it produced,
     with every token spent in between (including tool-call turns) counted against it."""
@@ -307,8 +311,9 @@ def log_usage(
         conn.execute(
             "INSERT INTO usage_log "
             "(channel, phone_number, provider, model, input_tokens, output_tokens, total_tokens, "
-            " cost_usd, tool_call_count, turn_count, latency_ms, error, user_message, reply_text, media_kind) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " cost_usd, tool_call_count, turn_count, latency_ms, error, user_message, reply_text, media_kind, "
+            " cache_read_tokens, cache_write_tokens) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 channel,
                 phone_number,
@@ -325,6 +330,8 @@ def log_usage(
                 user_message,
                 reply_text,
                 media_kind,
+                cache_read_tokens,
+                cache_write_tokens,
             ),
         )
 
@@ -334,13 +341,14 @@ def get_usage(limit: int = 50, offset: int = 0) -> dict:
         rows = conn.execute(
             "SELECT id, created_at, channel, phone_number, provider, model, input_tokens, "
             "output_tokens, total_tokens, cost_usd, tool_call_count, turn_count, latency_ms, error, "
-            "user_message, reply_text, media_kind "
+            "user_message, reply_text, media_kind, cache_read_tokens, cache_write_tokens "
             "FROM usage_log ORDER BY id DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
         totals = conn.execute(
             "SELECT COUNT(*) AS count, COALESCE(SUM(input_tokens), 0) AS input_tokens, "
-            "COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cost_usd), 0) AS cost_usd "
+            "COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cost_usd), 0) AS cost_usd, "
+            "COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens "
             "FROM usage_log"
         ).fetchone()
     return {

@@ -1,20 +1,20 @@
 {
-  "_comment": "USD price per 1,000,000 tokens. These are best-effort snapshots and WILL go stale - providers change pricing often. Verify against each provider's official pricing page before trusting cost numbers for anything real, and edit this file as needed: https://www.anthropic.com/pricing , https://openai.com/api/pricing , https://ai.google.dev/gemini-api/docs/pricing",
+  "_comment": "USD price per 1,000,000 tokens. cache_read = tokens served from a prompt cache (much cheaper); cache_write = tokens written into the cache (Anthropic charges a premium, OpenAI/Gemini don't charge separately, so cache_write there equals input). These are best-effort snapshots and WILL go stale - verify against each provider's pricing page and edit: https://www.anthropic.com/pricing , https://openai.com/api/pricing , https://ai.google.dev/gemini-api/docs/pricing",
 
   "anthropic": {
-    "claude-opus-5":    { "input": 5.00,  "output": 25.00 },
-    "claude-sonnet-5":  { "input": 2.00,  "output": 10.00 },
-    "claude-haiku-4-5": { "input": 1.00,  "output": 5.00 }
+    "claude-opus-5":    { "input": 5.00,  "output": 25.00, "cache_read": 0.50, "cache_write": 6.25 },
+    "claude-sonnet-5":  { "input": 2.00,  "output": 10.00, "cache_read": 0.20, "cache_write": 2.50 },
+    "claude-haiku-4-5": { "input": 1.00,  "output": 5.00,  "cache_read": 0.10, "cache_write": 1.25 }
   },
 
   "openai": {
-    "gpt-5":       { "input": 1.25, "output": 10.00 },
-    "gpt-5-mini":  { "input": 0.25, "output": 2.00 },
-    "gpt-5-nano":  { "input": 0.05, "output": 0.40 }
+    "gpt-5":       { "input": 1.25, "output": 10.00, "cache_read": 0.125, "cache_write": 1.25 },
+    "gpt-5-mini":  { "input": 0.25, "output": 2.00,  "cache_read": 0.025, "cache_write": 0.25 },
+    "gpt-5-nano":  { "input": 0.05, "output": 0.40,  "cache_read": 0.005, "cache_write": 0.05 }
   },
 
   "gemini": {
-    "gemini-3-pro":   { "input": 2.00, "output": 12.00 },
-    "gemini-3-flash": { "input": 0.30, "output": 2.50 }
+    "gemini-3-pro":   { "input": 2.00, "output": 12.00, "cache_read": 0.20, "cache_write": 2.00 },
+    "gemini-3-flash": { "input": 0.30, "output": 2.50,  "cache_read": 0.03, "cache_write": 0.30 }
   }
 }

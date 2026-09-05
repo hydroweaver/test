@@ -118,7 +118,10 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=502, detail=f"{req.provider} request failed: {e}")
     latency_ms = int((time.time() - start) * 1000)
 
-    cost = calculate_cost(req.provider, model, result.input_tokens, result.output_tokens)
+    cost = calculate_cost(
+        req.provider, model, result.input_tokens, result.output_tokens,
+        result.cache_read_tokens, result.cache_write_tokens,
+    )
     db.log_usage(
         channel="api", provider=req.provider, model=model,
         input_tokens=result.input_tokens, output_tokens=result.output_tokens,
@@ -126,6 +129,7 @@ def chat(req: ChatRequest):
         tool_call_count=result.tool_call_count, turn_count=result.turn_count,
         latency_ms=latency_ms, user_message=req.message, reply_text=result.reply,
         media_kind="text",
+        cache_read_tokens=result.cache_read_tokens, cache_write_tokens=result.cache_write_tokens,
     )
 
     pricing_note = (
@@ -235,7 +239,10 @@ def _handle_message(
         except Exception as e:
             error = (error + " | " if error else "") + f"send failed: {e}"
 
-    cost = calculate_cost(provider, model, result.input_tokens, result.output_tokens) if result else None
+    cost = calculate_cost(
+        provider, model, result.input_tokens, result.output_tokens,
+        result.cache_read_tokens, result.cache_write_tokens,
+    ) if result else None
     try:
         db.log_usage(
             channel="whatsapp", provider=provider, model=model,
@@ -246,6 +253,8 @@ def _handle_message(
             turn_count=result.turn_count if result else 0,
             phone_number=from_number, latency_ms=latency_ms, error=error,
             user_message=body, reply_text=reply_text, media_kind=media_kind,
+            cache_read_tokens=result.cache_read_tokens if result else 0,
+            cache_write_tokens=result.cache_write_tokens if result else 0,
         )
     except Exception:
         pass  # a logging failure should never block the reply
