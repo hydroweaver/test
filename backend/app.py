@@ -98,8 +98,16 @@ def health():
     tell from the outside when several Railway services/environments look alike.
     """
     settings = db.get_settings()
+    # Railway injects these at build time. Surfacing the commit is the only way to
+    # tell from outside whether a deploy actually shipped the code you pushed, or
+    # whether it rebuilt an older one.
     return {
         "status": "ok",
+        "commit": (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "unknown")[:7],
+        "commit_message": os.environ.get("RAILWAY_GIT_COMMIT_MESSAGE", ""),
+        "branch": os.environ.get("RAILWAY_GIT_BRANCH", ""),
+        "service": os.environ.get("RAILWAY_SERVICE_NAME", ""),
+        "environment": os.environ.get("RAILWAY_ENVIRONMENT_NAME", ""),
         "company": COMPANY_NAME,
         "active_provider": settings["active_provider"],
         "active_model": settings["active_model"],
