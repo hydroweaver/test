@@ -133,7 +133,10 @@ def _run_gemini_agent(message, model, system, history, image, toolbox) -> AgentR
         # prompt_token_count includes cached tokens - subtract so they're priced once.
         input_tokens += max((usage.prompt_token_count or 0) - cached, 0)
         cache_read += cached
-        output_tokens += usage.candidates_token_count or 0
+        # Gemini 3's thinking is on by default and billed at the output rate, but
+        # lives in a separate field - miss it and the cost log silently undercounts
+        # every reasoning-heavy reply.
+        output_tokens += (usage.candidates_token_count or 0) + (getattr(usage, "thoughts_token_count", 0) or 0)
 
         response_parts = response.candidates[0].content.parts or []
         function_calls = [p for p in response_parts if p.function_call]
