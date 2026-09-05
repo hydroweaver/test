@@ -33,9 +33,15 @@ def remember_base_url(url: str) -> None:
     _observed_base_url = url.rstrip("/")
 
 
-def public_url(filename: str) -> str | None:
+def base_url() -> str | None:
+    """PUBLIC_BASE_URL if set, else whatever host the last webhook arrived on."""
     base = os.environ.get("PUBLIC_BASE_URL") or _observed_base_url
-    return f"{base.rstrip('/')}/media/{filename}" if base else None
+    return base.rstrip("/") if base else None
+
+
+def public_url(filename: str) -> str | None:
+    base = base_url()
+    return f"{base}/media/{filename}" if base else None
 
 
 def download_twilio_media(url: str) -> tuple[bytes, str]:

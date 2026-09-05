@@ -273,7 +273,9 @@ def _send_whatsapp(to_number: str, body: str, media_files: list[str]) -> str:
     # Twilio accepting a WhatsApp message only means it queued. Delivery can still
     # fail seconds later (expired sandbox join, outside the 24h window) and that
     # verdict only ever arrives here, on a status callback.
-    base = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    # Falls back to the host the last webhook came in on, so delivery verdicts work
+    # even when PUBLIC_BASE_URL was never set.
+    base = media.base_url()
     status_callback = f"{base}/webhook/twilio-status" if base else None
     sids = []
     for i, chunk in enumerate(chunks):
