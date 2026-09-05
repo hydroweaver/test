@@ -128,10 +128,13 @@ function renderModelSelect() {
   const sel = document.getElementById('model-select');
   const active = `${currentSettings.active_provider}|${currentSettings.active_model}`;
   let html = '';
+  const warnings = [];
   for (const [provider, info] of Object.entries(currentSettings.providers)) {
     const models = (info.models && info.models.length) ? info.models : info.priced_models;
     const priced = new Set(info.priced_models || []);
-    html += `<optgroup label="${esc(provider)}${info.configured ? '' : ' (no key)'}">` +
+    if (!info.live && info.note) warnings.push(info.note);
+    html += `<optgroup label="${esc(provider)}${
+      info.live ? ' — ' + models.length + ' models' : ' (partial list — no key)'}">` +
       models.map(m => {
         const val = `${provider}|${m}`;
         return `<option value="${esc(val)}" ${val === active ? 'selected' : ''}>${
@@ -141,6 +144,7 @@ function renderModelSelect() {
   sel.innerHTML = html;
   document.getElementById('active-label').textContent =
     `· ${currentSettings.active_provider} / ${currentSettings.active_model}`;
+  if (warnings.length) barMsg(warnings.join(' '), true);
 }
 
 async function saveSettings(btn) {

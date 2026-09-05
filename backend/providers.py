@@ -27,6 +27,15 @@ class ProviderError(Exception):
     pass
 
 
+def clear_cache(provider: str | None = None) -> None:
+    """Called when a key changes, so the model list refreshes immediately instead
+    of staying stale for the cache window."""
+    if provider:
+        _cache.pop(provider, None)
+    else:
+        _cache.clear()
+
+
 def _require_key(env_var: str, provider: str) -> str:
     key = os.environ.get(env_var)
     if not key:
@@ -61,21 +70,33 @@ def _gemini_models(api_key: str) -> list[str]:
     return sorted(set(out), reverse=True)
 
 
-def list_models(provider: str) -> list[str]:
-    """Live model list from the provider, cached briefly. Falls back to a small
-    known-good list if the provider can't be reached."""
+def list_models(provider: str) -> dict:
+    """Live model list from the provider, cached briefly.
+
+    Returns {"models": [...], "live": bool, "note": str}. `live` is False when we
+    had to fall back to a stub list - which is almost always because no key is
+    configured, and is worth saying out loud rather than quietly showing 3 models.
+    """
     cached = _cache.get(provider)
     if cached and time.time() - cached[0] < CACHE_SECONDS:
         return cached[1]
 
     api_key = db.resolve_api_key(provider)
-    models = []
-    if api_key:
+    models, live, note = [], False, ""
+    if not api_key:
+        note = f"Add a {provider} key to load the full model list from their API."
+    else:
         try:
             models = _openai_models(api_key) if provider == "openai" else _gemini_models(api_key)
+            live = bool(models)
         except Exception as e:
-            print(f"could not list {provider} models: {e}")
+            note = f"Couldn't reach {provider} to list models: {e}"
+            print(note)
 
-    models = models or FALLBACK_MODELS.get(provider, [])
-    _cache[provider] = (time.time(), models)
-    return models
+    if not models:
+        models = FALLBACK_MODELS.get(provider, [])
+        note = note or f"Showing a fallback list - {provider} returned nothing."
+
+    result = {"models": models, "live": live, "note": note}
+    _cache[provider] = (time.time(), result)
+    return result

@@ -16,7 +16,7 @@ import db
 import media
 from agent import run_agent
 from pricing import calculate_cost, load_pricing
-from providers import PROVIDERS, ProviderError, list_models
+from providers import PROVIDERS, ProviderError, clear_cache, list_models
 
 load_dotenv()
 
@@ -95,7 +95,7 @@ def models():
         provider: {
             **db.key_status(provider),
             "default_model": DEFAULT_MODELS[provider],
-            "models": list_models(provider),
+            **list_models(provider),
             "priced_models": list(pricing.get(provider, {}).keys()),
         }
         for provider in PROVIDERS
@@ -383,7 +383,7 @@ def admin_get_settings():
             provider: {
                 **db.key_status(provider),
                 "default_model": DEFAULT_MODELS[provider],
-                "models": list_models(provider),
+                **list_models(provider),
             "priced_models": list(pricing.get(provider, {}).keys()),
             }
             for provider in PROVIDERS
@@ -418,6 +418,7 @@ def admin_set_key(req: KeyUpdate):
     if not req.api_key.strip():
         raise HTTPException(status_code=400, detail="api_key is empty")
     masked = db.set_provider_key(req.provider, req.api_key.strip())
+    clear_cache(req.provider)  # so the model list reloads with the new key
     return {"provider": req.provider, "masked": masked, "source": "database"}
 
 
