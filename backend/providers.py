@@ -77,13 +77,19 @@ def _gemini_models(api_key: str) -> tuple[list[str], dict[str, bool]]:
     own flag for whether it reasons before replying (slower, and billed for it) or
     answers directly. Surfaced in the admin dropdown so a fast/cheap pick is obvious
     without guessing from the name."""
+    # Gemini reports image, video, speech and embedding models as generateContent
+    # capable too, so they show up in a naive list - and picking one for a chat bot
+    # fails at request time (an image model answers a text prompt with a quota error,
+    # not a reply). Same exclusion approach as the OpenAI list above.
+    skip = ("embedding", "aqa", "imagen", "image", "veo", "video", "tts", "audio",
+            "live", "computer-use", "guard")
     out, thinking = [], {}
     for m in gemini_client(api_key).models.list():
         actions = getattr(m, "supported_actions", None) or []
         if actions and "generateContent" not in actions:
             continue
         name = (getattr(m, "name", "") or "").removeprefix("models/")
-        if name and "embedding" not in name and "aqa" not in name:
+        if name and not any(s in name.lower() for s in skip):
             out.append(name)
             thinking[name] = bool(getattr(m, "thinking", False))
     names = sorted(set(out), reverse=True)
