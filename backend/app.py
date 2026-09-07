@@ -17,6 +17,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 
 import crm
 import db
+import kb_seed
 import media
 from agent import run_agent
 from pricing import audio_cost, calculate_cost, load_pricing, lookup_rates
@@ -57,6 +58,10 @@ def _startup():
     first_provider = next(iter(DEFAULT_MODELS))
     db.init_db(first_provider, DEFAULT_MODELS[first_provider])
     crm.seed()
+    # Without a knowledge base, search_website returns nothing and every token count
+    # is missing the retrieval leg that dominates a real agent's context.
+    kb_seed.seed()
+    print(f"Knowledge base: {db.kb_chunk_count()} chunks indexed")
     if db.storage_is_durable():
         print(f"Usage log: {db.DB_PATH} (on a volume - survives redeploys)")
     else:

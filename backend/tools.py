@@ -7,8 +7,13 @@ pass it (and can't spoof another customer's records).
 
 import json
 
+import os
+
 import crm
 import db
+
+# Chunks returned per knowledge-base search. Each is ~900 characters (~225 tokens).
+KB_TOP_N = int(os.environ.get("KB_TOP_N", "6"))
 
 TOOL_SCHEMAS = [
     {
@@ -203,7 +208,10 @@ class ToolBox:
     # --- website ---------------------------------------------------------
 
     def _search_website(self, args: dict) -> str:
-        results = db.search_kb(args.get("query", ""), 5)
+        # How many chunks come back is the single biggest lever on context size, and
+        # therefore on cost per reply - so it's a setting, not a magic number. Raise
+        # KB_TOP_N to model a vendor that retrieves aggressively.
+        results = db.search_kb(args.get("query", ""), KB_TOP_N)
         if not results:
             return "No matching content found on the website for this query."
         return "\n\n".join(f"Source: {r['url']}\n{r['content']}" for r in results)
