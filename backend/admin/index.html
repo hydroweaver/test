@@ -86,6 +86,11 @@
 <div class="topbar">
   <div class="brand">Concierge admin <span id="active-label"></span></div>
   <select id="model-select" title="Provider and model"></select>
+  <select id="history-select" title="How much of the conversation is replayed into each request">
+    <option value="6">History: last 6</option>
+    <option value="20">History: last 20</option>
+    <option value="0">History: all</option>
+  </select>
   <button id="save-model" onclick="saveSettings(this)">Set active</button>
   <button class="secondary" onclick="loadUsage()">Refresh</button>
   <button class="secondary" onclick="testWhatsApp(this)">Test WhatsApp</button>
@@ -235,18 +240,26 @@ function renderModelSelect() {
       + (i.configured ? esc(i.masked) : 'set ' + n.toUpperCase() + '_API_KEY') + '</b>').join(' · ');
   document.getElementById('active-label').textContent =
     `· ${currentSettings.active_provider} / ${currentSettings.active_model}`;
+  const hist = document.getElementById('history-select');
+  const stored = String(currentSettings.history_limit ?? 6);
+  // An unlisted value (set via the API) still needs to show, not silently reset.
+  if (!Array.from(hist.options).some(o => o.value === stored)) {
+    hist.add(new Option(`History: last ${stored}`, stored));
+  }
+  hist.value = stored;
 }
 
 async function saveSettings(btn) {
   const [provider, model] = document.getElementById('model-select').value.split('|');
+  const history_limit = parseInt(document.getElementById('history-select').value, 10);
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
     await api('/admin/settings', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({provider, model}),
+      body: JSON.stringify({provider, model, history_limit}),
     });
     await loadSettings();
-    barMsg(`Active: ${provider} / ${model}`);
+    barMsg(`Active: ${provider} / ${model} · history: ${history_limit || 'all'}`);
   } catch (e) {
     barMsg(e.message, true);
   }

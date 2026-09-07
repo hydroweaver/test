@@ -372,9 +372,11 @@ def _handle_message(
     Always called in the background, so a slow exchange (transcription + tool calls +
     speech) can take as long as it needs - the webhook has already been answered."""
     conversation_id = db.get_or_create_conversation(from_number)
-    history = db.get_recent_messages(conversation_id, limit=6)
     settings = db.get_settings()
     provider, model = settings["active_provider"], settings["active_model"]
+    # Everything is stored; this decides how much gets replayed into the prompt (and
+    # re-billed) each turn. 0 = the whole thread.
+    history = db.get_recent_messages(conversation_id, limit=settings["history_limit"])
 
     start = time.time()
     result = None
@@ -644,6 +646,7 @@ def admin_get_settings():
 class SettingsUpdate(BaseModel):
     provider: str
     model: str
+    history_limit: int | None = None  # messages replayed per turn; 0 = whole thread
 
 
 @admin_router.get("/models")
@@ -676,7 +679,9 @@ def admin_update_settings(req: SettingsUpdate):
                    f"Pick one from the list (e.g. {', '.join(info['models'][:3])}).",
         )
 
-    db.update_settings(req.provider, req.model)
+    if req.history_limit is not None and req.history_limit < 0:
+        raise HTTPException(status_code=400, detail="history_limit can't be negative (0 = all)")
+    db.update_settings(req.provider, req.model, req.history_limit)
     return {"ok": True}
 
 

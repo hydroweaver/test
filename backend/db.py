@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS crm_incidents (
 # (with real usage rows already in them) migrate instead of needing a reset.
 MIGRATIONS = [
     ("conversations", "reply_pref", "TEXT"),   # 'voice' or 'text', per customer
+    ("settings", "history_limit", "INTEGER DEFAULT 6"),  # 0 = replay the whole thread
     ("usage_log", "user_message", "TEXT"),
     ("usage_log", "reply_text", "TEXT"),
     ("usage_log", "media_kind", "TEXT"),
@@ -256,16 +257,29 @@ def key_status(provider: str) -> dict:
 
 def get_settings() -> dict:
     with get_conn() as conn:
-        row = conn.execute("SELECT active_provider, active_model FROM settings WHERE id = 1").fetchone()
-    return {"active_provider": row["active_provider"], "active_model": row["active_model"]}
+        row = conn.execute(
+            "SELECT active_provider, active_model, history_limit FROM settings WHERE id = 1"
+        ).fetchone()
+    limit = row["history_limit"]
+    return {
+        "active_provider": row["active_provider"],
+        "active_model": row["active_model"],
+        # 0 means replay the entire conversation; the column is NULL on databases
+        # created before this setting existed.
+        "history_limit": 6 if limit is None else int(limit),
+    }
 
 
-def update_settings(provider: str, model: str) -> None:
+def update_settings(provider: str, model: str, history_limit: int | None = None) -> None:
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE settings SET active_provider = ?, active_model = ?, updated_at = datetime('now') WHERE id = 1",
-            (provider, model),
-        )
+        if history_limit is None:
+            conn.execute(
+                "UPDATE settings SET active_provider = ?, active_model = ?, "
+                "updated_at = datetime('now') WHERE id = 1", (provider, model))
+        else:
+            conn.execute(
+                "UPDATE settings SET active_provider = ?, active_model = ?, history_limit = ?, "
+                "updated_at = datetime('now') WHERE id = 1", (provider, model, history_limit))
 
 
 def get_or_create_conversation(phone_number: str) -> int:
@@ -282,12 +296,16 @@ def get_or_create_conversation(phone_number: str) -> int:
 
 
 def get_recent_messages(conversation_id: int, limit: int = 10) -> list[dict]:
+    """The turns to replay into the next request. limit=0 means the whole thread -
+    every message is stored either way; this only decides how much is re-sent (and
+    so how much is re-billed) on each turn."""
+    sql = ("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id DESC")
+    args: list = [conversation_id]
+    if limit:
+        sql += " LIMIT ?"
+        args.append(limit)
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT role, content FROM messages WHERE conversation_id = ? "
-            "ORDER BY id DESC LIMIT ?",
-            (conversation_id, limit),
-        ).fetchall()
+        rows = conn.execute(sql, args).fetchall()
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 

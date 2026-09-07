@@ -107,6 +107,12 @@ Returns the reply plus `usage` (exact tokens, summed across every tool-call turn
 
 ## How the numbers work
 
+- **History replay is the other cost lever.** Models are stateless: every request
+  re-sends the conversation, so a longer window is re-billed on every turn. All
+  messages are always stored; the **History** toggle in `/admin` (last 6 / last 20 /
+  all) only decides how many are replayed. Compare the two - full history grows the
+  input token count on every turn, which is exactly the effect worth measuring
+  against a fixed window.
 - **Token counts** come straight from each provider's own API response, summed across
   every turn of the tool-calling loop (the model may call `search_website` more than
   once before answering) - never estimated locally.
