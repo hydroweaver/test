@@ -376,7 +376,8 @@ def _handle_message(
     provider, model = settings["active_provider"], settings["active_model"]
     # Everything is stored; this decides how much gets replayed into the prompt (and
     # re-billed) each turn. 0 = the whole thread.
-    history = db.get_recent_messages(conversation_id, limit=settings["history_limit"])
+    history = db.get_recent_messages(conversation_id, limit=settings["history_limit"],
+                                     floor_id=settings["history_floor_id"])
     # The edited prompt wins; the file is the default and the reset target.
     system_prompt = settings["system_prompt"] or WHATSAPP_SYSTEM_PROMPT
 
@@ -684,13 +685,29 @@ def admin_update_settings(req: SettingsUpdate):
 
     if req.history_limit is not None and req.history_limit < 0:
         raise HTTPException(status_code=400, detail="history_limit can't be negative (0 = all)")
+
+    # A model switch starts from a clean slate. Otherwise the incoming model inherits
+    # every turn the previous one accumulated, and its first reply is billed for
+    # history the other model's first reply never carried - which makes the two
+    # models' costs incomparable, the one thing this page exists to measure.
+    current = db.get_settings()
+    switched = (current["active_provider"], current["active_model"]) != (req.provider, req.model)
     db.update_settings(req.provider, req.model, req.history_limit)
-    return {"ok": True}
+    if switched:
+        db.reset_history_floor()
+    return {"ok": True, "history_reset": switched}
 
 
 @admin_router.get("/usage")
 def admin_usage(limit: int = 50, offset: int = 0):
     return db.get_usage(limit, offset)
+
+
+@admin_router.post("/reset-history")
+def admin_reset_history():
+    """Start every conversation fresh from here - for a clean benchmark run without
+    changing model. Messages are kept; they just stop being replayed."""
+    return {"ok": True, "floor_id": db.reset_history_floor()}
 
 
 @admin_router.get("/prompt")

@@ -102,6 +102,8 @@
   </select>
   <button id="save-model" onclick="saveSettings(this)">Set active</button>
   <button class="secondary" onclick="loadUsage()">Refresh</button>
+  <button class="secondary" onclick="resetHistory(this)"
+          title="Start conversations fresh - messages are kept, just not replayed">Fresh start</button>
   <button class="secondary" onclick="testWhatsApp(this)">Test WhatsApp</button>
   <a class="btn-link" href="/admin/export.csv">Export CSV</a>
   <form method="post" action="/admin/logout" style="display:inline"><button class="secondary" type="submit">Log out</button></form>
@@ -141,6 +143,21 @@ function esc(s) {
   if (s == null) return '';
   return String(s).replace(/[&<>"']/g, c => (
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Draws a line under the conversation so far: nothing older is replayed into the
+// next request. Switching models does this automatically; this is for re-running a
+// benchmark on the same model.
+async function resetHistory(btn) {
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Clearing…';
+  try {
+    await api('/admin/reset-history', {method: 'POST'});
+    barMsg('History cleared - the next message starts a fresh conversation.');
+  } catch (e) {
+    barMsg(e.message, true);
+  }
+  btn.disabled = false; btn.textContent = label;
 }
 
 // Sends one real message through Twilio and reports what Twilio said back. The
@@ -273,12 +290,13 @@ async function saveSettings(btn) {
   const history_limit = parseInt(document.getElementById('history-select').value, 10);
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    await api('/admin/settings', {
+    const saved = await api('/admin/settings', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({provider, model, history_limit}),
     });
     await loadSettings();
-    barMsg(`Active: ${provider} / ${model} · history: ${history_limit || 'all'}`);
+    barMsg(`Active: ${provider} / ${model} · history: ${history_limit || 'all'}`
+           + (saved && saved.history_reset ? ' · history cleared for a clean comparison' : ''));
   } catch (e) {
     barMsg(e.message, true);
   }

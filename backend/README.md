@@ -113,6 +113,13 @@ Returns the reply plus `usage` (exact tokens, summed across every tool-call turn
   cost - edit, save, and the next message uses it. Saved in the database, so it
   survives a redeploy wherever the database does; `system_prompt.txt` stays the
   default and the reset target.
+- **Switching models starts the conversation fresh.** Otherwise the incoming model
+  inherits every turn the previous one accumulated, so its first reply is billed for
+  history the other model's first reply never carried - and the two models' costs
+  stop being comparable, which is the one thing this page exists to measure. Nothing
+  is deleted: the messages stay for the record, they just stop being replayed. The
+  **Fresh start** button does the same thing without changing model, for re-running a
+  benchmark on one model.
 - **Every row records the history setting it ran under** (`history_limit`, and
   `history_msgs` for the turns actually replayed), in the log and the CSV, so a run
   at `last 6` stays comparable against one at `all` after the fact.

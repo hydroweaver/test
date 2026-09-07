@@ -189,6 +189,7 @@ MIGRATIONS = [
     ("conversations", "reply_pref", "TEXT"),   # 'voice' or 'text', per customer
     ("settings", "history_limit", "INTEGER DEFAULT 6"),  # 0 = replay the whole thread
     ("settings", "system_prompt", "TEXT"),     # NULL = use system_prompt.txt
+    ("settings", "history_floor_id", "INTEGER DEFAULT 0"),  # replay nothing older
     ("usage_log", "history_limit", "INTEGER"),  # the setting this reply ran under
     ("usage_log", "history_msgs", "INTEGER"),   # turns actually replayed, and re-billed
     ("usage_log", "user_message", "TEXT"),
@@ -261,18 +262,35 @@ def key_status(provider: str) -> dict:
 def get_settings() -> dict:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT active_provider, active_model, history_limit, system_prompt "
-            "FROM settings WHERE id = 1"
+            "SELECT active_provider, active_model, history_limit, system_prompt, "
+            "history_floor_id FROM settings WHERE id = 1"
         ).fetchone()
     limit = row["history_limit"]
     return {
         "active_provider": row["active_provider"],
         "active_model": row["active_model"],
         "system_prompt": row["system_prompt"],   # None = fall back to the file
+        "history_floor_id": row["history_floor_id"] or 0,
         # 0 means replay the entire conversation; the column is NULL on databases
         # created before this setting existed.
         "history_limit": 6 if limit is None else int(limit),
     }
+
+
+def reset_history_floor() -> int:
+    """Draw a line under everything said so far: nothing at or below this message id
+    is replayed again.
+
+    Switching models mid-conversation would otherwise hand the new model all of the
+    old one's accumulated turns, so its very first reply carries input tokens the
+    first model's never did - which quietly rigs any cost comparison between them.
+    Nothing is deleted; the messages stay for the record, they just stop being resent.
+    """
+    with get_conn() as conn:
+        floor = conn.execute("SELECT COALESCE(MAX(id), 0) AS m FROM messages").fetchone()["m"]
+        conn.execute("UPDATE settings SET history_floor_id = ?, updated_at = datetime('now') "
+                     "WHERE id = 1", (floor,))
+    return floor
 
 
 def update_settings(provider: str, model: str, history_limit: int | None = None) -> None:
@@ -307,12 +325,14 @@ def get_or_create_conversation(phone_number: str) -> int:
         return cur.lastrowid
 
 
-def get_recent_messages(conversation_id: int, limit: int = 10) -> list[dict]:
+def get_recent_messages(conversation_id: int, limit: int = 10, floor_id: int = 0) -> list[dict]:
     """The turns to replay into the next request. limit=0 means the whole thread -
     every message is stored either way; this only decides how much is re-sent (and
-    so how much is re-billed) on each turn."""
-    sql = ("SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id DESC")
-    args: list = [conversation_id]
+    so how much is re-billed) on each turn. Messages at or below floor_id are never
+    replayed, which is how a model switch starts from a clean slate."""
+    sql = ("SELECT role, content FROM messages WHERE conversation_id = ? AND id > ? "
+           "ORDER BY id DESC")
+    args: list = [conversation_id, floor_id]
     if limit:
         sql += " LIMIT ?"
         args.append(limit)
