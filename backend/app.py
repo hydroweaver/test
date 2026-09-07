@@ -349,6 +349,21 @@ async def twilio_status_webhook(request: Request):
     return Response(status_code=204)
 
 
+VOICE_WORDS = {"voice", "audio", "voice note", "voicenote", "1"}
+TEXT_WORDS = {"text", "typed", "typing", "written", "2"}
+
+
+def _format_choice(body: str) -> str | None:
+    """A bare 'voice' or 'text' is the customer answering the format question, not a
+    new request - recognised here so it never costs a model call."""
+    word = (body or "").strip().lower().strip(".!*")
+    if word in VOICE_WORDS:
+        return "voice"
+    if word in TEXT_WORDS:
+        return "text"
+    return None
+
+
 def _handle_message(
     from_number: str, body: str, image: dict | None, media_kind: str,
     note: str | None = None,
@@ -364,32 +379,51 @@ def _handle_message(
     start = time.time()
     result = None
     error = note
-    try:
-        result = run_agent(
-            provider, body, model, WHATSAPP_SYSTEM_PROMPT, history,
-            image=image, caller_phone=from_number,
-        )
-        reply_text = result.reply
-    except Exception as e:
-        reply_text = "Sorry, I'm temporarily unavailable. Please try again shortly. 🙏"
-        # Append, don't replace: `note` carries how the reply is being delivered and
-        # any media failure, which is often the more useful half of the diagnosis.
-        error = f"{error} | {e}" if error else str(e)
+    choice = _format_choice(body)
+    if choice:
+        db.set_reply_pref(conversation_id, choice)
+        reply_text = ("🎤 Got it - I'll send voice notes from now on."
+                      if choice == "voice" else
+                      "💬 Got it - I'll reply with text from now on.")
+        error = (error + " | " if error else "") + f"reply format set to {choice} (no model call)"
+    else:
+        try:
+            result = run_agent(
+                provider, body, model, WHATSAPP_SYSTEM_PROMPT, history,
+                image=image, caller_phone=from_number,
+            )
+            reply_text = result.reply
+        except Exception as e:
+            reply_text = "Sorry, I'm temporarily unavailable. Please try again shortly. 🙏"
+            # Append, don't replace: `note` carries how the reply is being delivered
+            # and any media failure - often the more useful half of the diagnosis.
+            error = f"{error} | {e}" if error else str(e)
 
     reply_media = list(result.media_files) if result else []
-    # Mirror the medium: a voice note gets a voice note back.
-    if media_kind == "audio" and result and reply_text:
-        try:
-            voice_file = media.synthesize_voice_note(reply_text)
-            if voice_file:
-                reply_media.append(voice_file)
-        except Exception as e:
-            error = (error + " | " if error else "") + f"TTS failed: {e}"
+    # A voice note gets the customer's chosen format back, and always the option to
+    # switch - guessing wrong either way (silent audio in a meeting, or typing at
+    # someone who sent voice because they can't type) is worse than asking.
+    if media_kind == "audio" and reply_text:
+        pref = db.get_reply_pref(conversation_id)
+        if pref == "voice":
+            try:
+                # Synthesised before the hint is appended, so the prompt isn't spoken.
+                voice_file = media.synthesize_voice_note(reply_text)
+                if voice_file:
+                    reply_media.append(voice_file)
+            except Exception as e:
+                error = (error + " | " if error else "") + f"TTS failed: {e}"
+        reply_text += ("\n\n💬 Prefer typed replies? Just reply *text*."
+                       if pref == "voice" else
+                       "\n\n🎤 Want that as a voice note? Just reply *voice*.")
 
     latency_ms = int((time.time() - start) * 1000)
 
     db.add_message(conversation_id, "user", body)
-    if result is not None:
+    # Store the reply for any real answer - including a format-choice confirmation,
+    # which has no `result` but would otherwise leave a user turn with nothing
+    # after it in the history the model reads back.
+    if result is not None or choice:
         db.add_message(conversation_id, "assistant", reply_text)
 
     # Send first, then write exactly one usage row for this exchange - one incoming

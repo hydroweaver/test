@@ -13,8 +13,10 @@ test rig for comparing token/cost across models, not a hardened product.
 - **Receives** text, images (sent to the model as vision input), and voice notes
   (transcribed with OpenAI Whisper regardless of which chat model is active, since
   Gemini's chat models don't take audio input directly).
-- **Sends** text, product images, and voice notes back (voice replies when you sent a
-  voice note; OpenAI TTS).
+- **Sends** text, product images, and voice notes back (OpenAI TTS). Every voice note
+  the customer sends gets the choice appended - reply *voice* for spoken replies,
+  *text* to go back to typing. The preference is remembered per customer, and
+  answering it costs no model call.
 - Calls a **toy CRM** (`crm.py`): looks the caller up by WhatsApp number, lists their
   orders, checks an order by number, lists products and prices, sends a product image,
   checks delivery areas/fees, looks up the khata (credit tab), takes new orders, and

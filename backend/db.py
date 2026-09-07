@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS crm_incidents (
 # Columns added after the first deploy - applied in place so existing databases
 # (with real usage rows already in them) migrate instead of needing a reset.
 MIGRATIONS = [
+    ("conversations", "reply_pref", "TEXT"),   # 'voice' or 'text', per customer
     ("usage_log", "user_message", "TEXT"),
     ("usage_log", "reply_text", "TEXT"),
     ("usage_log", "media_kind", "TEXT"),
@@ -288,6 +289,21 @@ def get_recent_messages(conversation_id: int, limit: int = 10) -> list[dict]:
             (conversation_id, limit),
         ).fetchall()
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+def get_reply_pref(conversation_id: int) -> str | None:
+    """Whether this customer asked for voice or text replies. None = never chose."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT reply_pref FROM conversations WHERE id = ?", (conversation_id,)
+        ).fetchone()
+    return row["reply_pref"] if row else None
+
+
+def set_reply_pref(conversation_id: int, pref: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE conversations SET reply_pref = ? WHERE id = ?",
+                     (pref, conversation_id))
 
 
 def add_message(conversation_id: int, role: str, content: str) -> None:
