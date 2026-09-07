@@ -175,6 +175,9 @@ async function api(path, opts) {
 
 let modelLists = {};
 
+// Every exchange says what came in: text, an image, a voice note, or a failure.
+const KIND = {text: '💬', image: '🖼️', audio: '🎤', unsupported: '📎', error: '⚠️'};
+
 // Fast: key status + active model, straight from the DB. Never waits on a network call.
 async function loadSettings() {
   currentSettings = await api('/admin/settings');
@@ -265,15 +268,17 @@ async function loadUsage() {
   document.querySelector('#usage-table tbody').innerHTML = rows.length ? rows.map(r => `
     <tr>
       <td class="dim" data-label="Time">${esc(r.created_at).slice(5, 16)}<br><span class="tiny">${esc(r.phone_number) || '[api]'}</span></td>
-      <td class="msg-cell" data-label="Message">${esc(r.user_message)}${
-        r.media_kind && r.media_kind !== 'text' ? ' <span class="kind">' + esc(r.media_kind) + '</span>' : ''}</td>
+      <td class="msg-cell" data-label="Message"><span class="kind">${KIND[r.media_kind] || '💬'} ${
+        esc(r.media_kind || 'text')}</span> ${esc(r.user_message)}</td>
       <td class="msg-cell" data-label="Reply">${esc(r.reply_text)}${
         r.error ? '<div class="' + (String(r.error).startsWith('sent') ? 'sent' : 'err') + '">'
                   + esc(r.error) + '</div>' : ''}</td>
-      <td class="dim" data-label="Model">${esc(r.model)}<br><span class="tiny">${r.tool_call_count} tools · ${r.turn_count} turns · ${
-        r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + 's' : '-'}</span></td>
-      <td data-label="In">${r.input_tokens}${r.cache_read_tokens ? '<br><span class="cached">+' + r.cache_read_tokens + ' cached</span>' : ''}</td>
-      <td data-label="Out">${r.output_tokens}</td>
+      <td class="dim" data-label="Model">${esc(r.provider)} / ${esc(r.model)}<br><span class="tiny">${
+        r.tool_call_count} tools · ${r.turn_count} turns · ${
+        r.latency_ms != null ? (r.latency_ms / 1000).toFixed(1) + 's' : '-'} · ${esc(r.channel)}</span></td>
+      <td data-label="In">${r.input_tokens}<br><span class="cached">${
+        r.cache_read_tokens ? '+' + r.cache_read_tokens + ' cached' : 'no cache'}</span></td>
+      <td data-label="Out">${r.output_tokens}<br><span class="tiny">${r.total_tokens} total</span></td>
       <td data-label="Cost">${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
     </tr>`).join('')
     : `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem;">No replies yet.</td></tr>`;
