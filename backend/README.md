@@ -67,10 +67,16 @@ turns) counted against it - so per-reply cost is directly comparable.
    (`VERIFY_TWILIO_SIGNATURE=1`) needs the auth token specifically - Twilio signs with
    that, not with an API key secret.
 
+6. **Attach a Railway Volume mounted at `/data`** if you want to keep the numbers.
+   Everything outside a volume is wiped on every deploy, usage log included - so
+   without one you lose the data this rig exists to collect, and the active model
+   resets. With a volume mounted there it's picked up automatically; no `DB_PATH`
+   needed. `/health` reports `db_survives_redeploy` so you can check.
+
 That's it - message the Twilio WhatsApp number and watch replies + token/cost show up
-in `/admin`. (Optional: attach a Railway Volume mounted at `/data` and set
-`DB_PATH=/data/app.db` if you want the usage log/crawled content to survive a
-redeploy - skip it for a quick test, nothing breaks either way.)
+in `/admin`. **Export CSV** in the admin bar (or `GET /admin/export.csv`) downloads
+every logged exchange - message, reply, tokens, cache, cost, tools, latency, delivery
+status - for analysis elsewhere.
 
 ## Running it locally instead
 

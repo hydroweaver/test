@@ -76,6 +76,9 @@
     td.msg-cell::before { flex: none; }
   }
 
+  .btn-link { cursor: pointer; padding: .45rem .9rem; font-size: .82rem; font-weight: 600;
+              border-radius: 8px; background: #fff; color: var(--text);
+              border: 1px solid var(--border); text-decoration: none; display: inline-block; }
 </style>
 </head>
 <body>
@@ -86,6 +89,7 @@
   <button id="save-model" onclick="saveSettings(this)">Set active</button>
   <button class="secondary" onclick="loadUsage()">Refresh</button>
   <button class="secondary" onclick="testWhatsApp(this)">Test WhatsApp</button>
+  <a class="btn-link" href="/admin/export.csv">Export CSV</a>
   <form method="post" action="/admin/logout" style="display:inline"><button class="secondary" type="submit">Log out</button></form>
   <span class="bar-msg" id="keys-status"></span>
   <span class="bar-msg" id="bar-msg"></span>

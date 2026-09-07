@@ -8,7 +8,26 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
-DB_PATH = os.environ.get("DB_PATH", "./data/app.db")
+def _default_db_path() -> str:
+    """Prefer a mounted volume, because the container filesystem is not durable.
+
+    On Railway (and most container hosts) everything outside a mounted volume is
+    wiped on every deploy - which silently threw away the usage log this whole rig
+    exists to collect. If a volume is mounted, use it automatically, so attaching
+    one is the only step and there's no env var to remember.
+    """
+    for mount in ("/data", "/mnt/data"):
+        if os.path.isdir(mount) and os.access(mount, os.W_OK):
+            return os.path.join(mount, "app.db")
+    return "./data/app.db"
+
+
+DB_PATH = os.environ.get("DB_PATH") or _default_db_path()
+
+
+def storage_is_durable() -> bool:
+    """True when the DB lives on a mounted volume that survives a redeploy."""
+    return os.path.abspath(DB_PATH).startswith(("/data", "/mnt/data"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -326,6 +345,18 @@ def log_usage(
                 cache_write_tokens,
             ),
         )
+
+
+def export_usage_rows() -> list[dict]:
+    """Every logged exchange, oldest first - for the CSV export."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, created_at, channel, phone_number, provider, model, "
+            "input_tokens, output_tokens, total_tokens, cache_read_tokens, cache_write_tokens, "
+            "cost_usd, tool_call_count, turn_count, latency_ms, media_kind, "
+            "user_message, reply_text, error FROM usage_log ORDER BY id"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def note_delivery(message_sid: str, note: str) -> bool:

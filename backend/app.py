@@ -1,5 +1,7 @@
 import hashlib
 import hmac
+import csv
+import io
 import os
 import secrets
 import time
@@ -55,6 +57,12 @@ def _startup():
     first_provider = next(iter(DEFAULT_MODELS))
     db.init_db(first_provider, DEFAULT_MODELS[first_provider])
     crm.seed()
+    if db.storage_is_durable():
+        print(f"Usage log: {db.DB_PATH} (on a volume - survives redeploys)")
+    else:
+        print(f"WARNING: usage log at {db.DB_PATH} is on the container filesystem and "
+              f"WILL BE WIPED on the next deploy. Attach a volume mounted at /data to "
+              f"keep it (no env var needed - it's picked up automatically).")
     # Replies go out over Twilio's API, so these are required. Say it at boot rather
     # than letting every exchange fail one at a time in the usage log.
     missing = _missing_send_config()
@@ -115,6 +123,9 @@ def health():
         "twilio_ready": not _missing_send_config(),
         "twilio_missing": _missing_send_config(),
         "exchanges_logged": db.get_usage(1)["totals"]["count"],
+        "db_path": db.DB_PATH,
+        # False means every redeploy wipes the usage log - the data this exists for.
+        "db_survives_redeploy": db.storage_is_durable(),
     }
 
 
@@ -638,6 +649,24 @@ def admin_update_settings(req: SettingsUpdate):
 @admin_router.get("/usage")
 def admin_usage(limit: int = 50, offset: int = 0):
     return db.get_usage(limit, offset)
+
+
+@admin_router.get("/export.csv")
+def admin_export_csv():
+    """Every logged exchange as CSV, for analysis outside this app (and as the way
+    to get the data off ephemeral storage before a deploy wipes it)."""
+    rows = db.export_usage_rows()
+    buf = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="usage-{stamp}.csv"'},
+    )
 
 
 class WhatsAppTest(BaseModel):
