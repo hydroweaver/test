@@ -349,13 +349,18 @@ async def twilio_status_webhook(request: Request):
     return Response(status_code=204)
 
 
-VOICE_WORDS = {"voice", "audio", "voice note", "voicenote", "1"}
-TEXT_WORDS = {"text", "typed", "typing", "written", "2"}
+VOICE_WORDS = {"voice", "audio", "voice note", "voicenote"}
+TEXT_WORDS = {"text", "typed", "typing", "written"}
 
 
 def _format_choice(body: str) -> str | None:
     """A bare 'voice' or 'text' is the customer answering the format question, not a
-    new request - recognised here so it never costs a model call."""
+    new request - recognised here so it never costs a model call.
+
+    Deliberately no digits: the bot offers numbered menus ("1. Track an order"), so
+    treating a bare "1" as a format choice would swallow the customer's menu pick and
+    answer a question they never asked.
+    """
     word = (body or "").strip().lower().strip(".!*")
     if word in VOICE_WORDS:
         return "voice"
