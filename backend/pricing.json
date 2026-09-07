@@ -1,4 +1,14 @@
 {
+  "_rates": {
+    "units": "USD per 1,000,000 tokens",
+    "sources": {
+      "openai": "https://openai.com/api/pricing/",
+      "gemini": "https://ai.google.dev/gemini-api/docs/pricing",
+      "whisper_tts": "https://openai.com/api/pricing/"
+    },
+    "warning": "These rates are what every cost in the usage log is computed from. Provider pricing changes; verify against the pages above before quoting any figure externally, and edit this file if a rate is stale.",
+    "last_verified": "not verified against the live pricing pages"
+  },
   "_comment": "USD per 1,000,000 tokens. Dated snapshots inherit their base model's rates automatically (gpt-5.6-sol-2026-01-15 uses gpt-5.6-sol), so only base models need listing here. A model with no entry still runs and reports exact token counts - its cost just shows '-'. Verify against https://openai.com/api/pricing and https://ai.google.dev/gemini-api/docs/pricing; rates move.",
   "openai": {
     "gpt-6-astra": {

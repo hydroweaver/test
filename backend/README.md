@@ -142,6 +142,10 @@ Returns the reply plus `usage` (exact tokens, summed across every tool-call turn
   spent nothing, and one whose model isn't in `pricing.json` has an unknown cost, not
   a zero one - counting either in the denominator makes a model look cheaper the more
   often it fails. The count of excluded rows is shown next to the total.
+- **The rates live in `pricing.json`**, in USD per million tokens, with the provider
+  pricing pages listed under `_rates.sources`. Every cost in the log is computed from
+  that file and nothing else, so it is the one place to correct if a rate is stale -
+  and worth checking against the live pages before quoting a figure externally.
 - **Cost** is `tokens * price_per_million` from `pricing.json`. Provider pricing
   drifts, especially OpenAI/Gemini - treat it as a starting point and edit that file
   if a rate is off.
