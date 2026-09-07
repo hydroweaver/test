@@ -127,7 +127,23 @@ def _run_gemini_agent(message, model, system, history, image, toolbox) -> AgentR
             system_instruction=system,
             tools=None if force_text else [tool],
         )
-        response = client.models.generate_content(model=model, contents=contents, config=config)
+        if force_text:
+            # On the last turn the model must answer, not think. With thinking left on
+            # it can spend the whole output budget reasoning and return no text at all -
+            # which is how voice notes and images came back as an empty reply after
+            # burning 15-19k input tokens. Not every model accepts the setting, so fall
+            # back to a plain call rather than failing the whole exchange.
+            try:
+                config.thinking_config = types.ThinkingConfig(thinking_budget=0)
+            except Exception:
+                pass
+        try:
+            response = client.models.generate_content(model=model, contents=contents, config=config)
+        except Exception:
+            if not force_text or config.thinking_config is None:
+                raise
+            config.thinking_config = None
+            response = client.models.generate_content(model=model, contents=contents, config=config)
         usage = response.usage_metadata
         cached = getattr(usage, "cached_content_token_count", 0) or 0
         # prompt_token_count includes cached tokens - subtract so they're priced once.
@@ -141,8 +157,18 @@ def _run_gemini_agent(message, model, system, history, image, toolbox) -> AgentR
         response_parts = response.candidates[0].content.parts or []
         function_calls = [p for p in response_parts if p.function_call]
         if not function_calls or force_text:
+            text = response.text or ""
+            if not text:
+                # Ran out of tool turns with nothing to say. Say that, rather than
+                # sending silence - the tokens were spent either way.
+                finish = getattr(response.candidates[0], "finish_reason", None)
+                raise ProviderError(
+                    f"{model} returned no text after {turn + 1} turns and "
+                    f"{tool_calls} tool calls (finish_reason={finish}). Try a lower "
+                    f"MAX_TOOL_TURNS, or a model that settles on an answer sooner."
+                )
             return AgentResult(
-                response.text or "", input_tokens, output_tokens, tool_calls, turn + 1,
+                text, input_tokens, output_tokens, tool_calls, turn + 1,
                 toolbox.pending_media, cache_read, 0,
             )
 
