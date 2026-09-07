@@ -192,6 +192,7 @@ MIGRATIONS = [
     ("settings", "history_floor_id", "INTEGER DEFAULT 0"),  # replay nothing older
     ("usage_log", "history_limit", "INTEGER"),  # the setting this reply ran under
     ("usage_log", "history_msgs", "INTEGER"),   # turns actually replayed, and re-billed
+    ("usage_log", "audio_cost_usd", "REAL"),    # Whisper + TTS, on top of the model
     ("usage_log", "user_message", "TEXT"),
     ("usage_log", "reply_text", "TEXT"),
     ("usage_log", "media_kind", "TEXT"),
@@ -383,6 +384,7 @@ def log_usage(
     cache_write_tokens: int = 0,
     history_limit: int | None = None,
     history_msgs: int | None = None,
+    audio_cost_usd: float | None = None,
 ) -> None:
     """One row per exchange: exactly one incoming message and the reply it produced,
     with every token spent in between (including tool-call turns) counted against it."""
@@ -391,8 +393,8 @@ def log_usage(
             "INSERT INTO usage_log "
             "(channel, phone_number, provider, model, input_tokens, output_tokens, total_tokens, "
             " cost_usd, tool_call_count, turn_count, latency_ms, error, user_message, reply_text, media_kind, "
-            " cache_read_tokens, cache_write_tokens, history_limit, history_msgs) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " cache_read_tokens, cache_write_tokens, history_limit, history_msgs, audio_cost_usd) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 channel,
                 phone_number,
@@ -413,6 +415,7 @@ def log_usage(
                 cache_write_tokens,
                 history_limit,
                 history_msgs,
+                audio_cost_usd,
             ),
         )
 
@@ -424,7 +427,7 @@ def export_usage_rows() -> list[dict]:
             "SELECT id, created_at, channel, phone_number, provider, model, "
             "input_tokens, output_tokens, total_tokens, cache_read_tokens, cache_write_tokens, "
             "cost_usd, tool_call_count, turn_count, latency_ms, media_kind, "
-            "history_limit, history_msgs, user_message, reply_text, error "
+            "history_limit, history_msgs, audio_cost_usd, user_message, reply_text, error "
             "FROM usage_log ORDER BY id"
         ).fetchall()
     return [dict(r) for r in rows]
@@ -456,19 +459,25 @@ def get_usage(limit: int = 50, offset: int = 0) -> dict:
             "SELECT id, created_at, channel, phone_number, provider, model, input_tokens, "
             "output_tokens, total_tokens, cost_usd, tool_call_count, turn_count, latency_ms, error, "
             "user_message, reply_text, media_kind, cache_read_tokens, cache_write_tokens, "
-            "history_limit, history_msgs "
+            "history_limit, history_msgs, audio_cost_usd "
             "FROM usage_log ORDER BY id DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
+        # A reply that errored (no tokens) or has no pricing entry (cost NULL) would
+        # otherwise be counted in the denominator and drag every average down, making
+        # a model look cheaper the more often it failed.
         totals = conn.execute(
             "SELECT COUNT(*) AS count, COALESCE(SUM(input_tokens), 0) AS input_tokens, "
             "COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cost_usd), 0) AS cost_usd, "
             "COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens "
-            "FROM usage_log"
+            "FROM usage_log WHERE cost_usd IS NOT NULL AND total_tokens > 0"
         ).fetchone()
+        skipped = conn.execute(
+            "SELECT COUNT(*) AS n FROM usage_log WHERE cost_usd IS NULL OR total_tokens = 0"
+        ).fetchone()["n"]
     return {
         "rows": [dict(r) for r in rows],
-        "totals": dict(totals),
+        "totals": {**dict(totals), "excluded": skipped},
     }
 
 

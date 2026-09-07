@@ -19,7 +19,7 @@ import crm
 import db
 import media
 from agent import run_agent
-from pricing import calculate_cost, load_pricing, lookup_rates
+from pricing import audio_cost, calculate_cost, load_pricing, lookup_rates
 from providers import PROVIDERS, ProviderError, clear_cache, list_models
 
 load_dotenv()
@@ -371,7 +371,7 @@ def _format_choice(body: str) -> str | None:
 
 def _handle_message(
     from_number: str, body: str, image: dict | None, media_kind: str,
-    note: str | None = None,
+    note: str | None = None, audio_seconds: float = 0,
 ) -> str:
     """Runs the agent, logs the exchange, and sends the reply via Twilio's API.
     Always called in the background, so a slow exchange (transcription + tool calls +
@@ -410,6 +410,7 @@ def _handle_message(
             error = f"{error} | {e}" if error else str(e)
 
     reply_media = list(result.media_files) if result else []
+    spoken_chars = 0
     # A voice note gets the customer's chosen format back, and always the option to
     # switch - guessing wrong either way (silent audio in a meeting, or typing at
     # someone who sent voice because they can't type) is worse than asking.
@@ -421,6 +422,7 @@ def _handle_message(
                 voice_file = media.synthesize_voice_note(reply_text)
                 if voice_file:
                     reply_media.append(voice_file)
+                    spoken_chars = len(reply_text)
             except Exception as e:
                 error = (error + " | " if error else "") + f"TTS failed: {e}"
         reply_text += ("\n\n💬 Prefer typed replies? Just reply *text*."
@@ -451,12 +453,17 @@ def _handle_message(
         provider, model, result.input_tokens, result.output_tokens,
         result.cache_read_tokens, result.cache_write_tokens,
     ) if result else None
+    # Transcription and speech are real spend the token bill never shows, so they
+    # belong in this reply's cost rather than being invisible.
+    extra_audio = audio_cost(audio_seconds, spoken_chars)
+    total_cost = (cost["total_usd"] + extra_audio) if cost else None
     try:
         db.log_usage(
             channel="whatsapp", provider=provider, model=model,
             input_tokens=result.input_tokens if result else 0,
             output_tokens=result.output_tokens if result else 0,
-            cost_usd=cost["total_usd"] if cost else None,
+            cost_usd=total_cost,
+            audio_cost_usd=extra_audio or None,
             tool_call_count=result.tool_call_count if result else 0,
             turn_count=result.turn_count if result else 0,
             phone_number=from_number, latency_ms=latency_ms, error=error,
@@ -496,6 +503,7 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
     image = None
     media_kind = "text"
     media_error = None
+    audio_seconds = 0.0
     num_media = int(form.get("NumMedia", "0") or 0)
     if num_media:
         media_url = form.get("MediaUrl0", "")
@@ -511,6 +519,9 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
                 body = body or "(the customer sent this image)"
             elif content_type.startswith("audio/") or ctype.startswith("audio/"):
                 media_kind = "audio"
+                # WhatsApp voice notes are ~16 kbps opus; good enough to price the
+                # per-minute transcription without decoding the file.
+                audio_seconds = len(blob) * 8 / 16000
                 body = await run_in_threadpool(media.transcribe_audio, blob, ctype)
             else:
                 media_kind = "unsupported"
@@ -526,7 +537,8 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
 
     # Ack Twilio instantly with an empty response, then answer from a background task
     # via Twilio's API, which has no webhook time limit.
-    background.add_task(_handle_message, from_number, body, image, media_kind, media_error)
+    background.add_task(_handle_message, from_number, body, image, media_kind,
+                        media_error, audio_seconds)
     return Response(content=str(MessagingResponse()), media_type="application/xml")
 
 

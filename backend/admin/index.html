@@ -307,7 +307,8 @@ async function loadUsage() {
   const data = await api('/admin/usage?limit=100');
   const t = data.totals;
   document.getElementById('totals').innerHTML = `
-    <div class="stat"><div class="label">Replies</div><div class="value">${t.count}</div></div>
+    <div class="stat"><div class="label">Replies</div><div class="value">${t.count}</div>${
+      t.excluded ? '<div class="tiny">' + t.excluded + ' failed/unpriced, excluded</div>' : ''}</div>
     <div class="stat"><div class="label">Input</div><div class="value">${t.input_tokens}</div></div>
     <div class="stat"><div class="label">Cached</div><div class="value">${t.cache_read_tokens ?? 0}</div></div>
     <div class="stat"><div class="label">Output</div><div class="value">${t.output_tokens}</div></div>
@@ -331,7 +332,8 @@ async function loadUsage() {
       <td data-label="In">${r.input_tokens}<br><span class="cached">${
         r.cache_read_tokens ? '+' + r.cache_read_tokens + ' cached' : 'no cache'}</span></td>
       <td data-label="Out">${r.output_tokens}<br><span class="tiny">${r.total_tokens} total</span></td>
-      <td data-label="Cost">${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}</td>
+      <td data-label="Cost">${r.cost_usd != null ? '$' + r.cost_usd.toFixed(5) : '-'}${
+        r.audio_cost_usd ? '<br><span class="tiny">incl $' + r.audio_cost_usd.toFixed(5) + ' audio</span>' : ''}</td>
     </tr>`).join('')
     : `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.2rem;">No replies yet.</td></tr>`;
   barMsg(`Updated ${new Date().toLocaleTimeString()}`);

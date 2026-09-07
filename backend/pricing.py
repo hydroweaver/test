@@ -28,6 +28,19 @@ def priced_models(provider: str) -> list[str]:
     return list(load_pricing().get(provider, {}).keys())
 
 
+def audio_cost(seconds_in: float = 0, chars_out: int = 0) -> float:
+    """What a voice-note exchange costs on top of the model itself.
+
+    Transcription (Whisper, per minute) and speech synthesis (TTS, per character)
+    are real spend that the model's own token bill never shows, so an audio exchange
+    looks cheaper than it is unless they're added in.
+    """
+    rates = load_pricing().get("audio", {})
+    per_min = rates.get("whisper-1", {}).get("per_minute_usd", 0)
+    per_mchars = rates.get("tts-1", {}).get("per_million_chars_usd", 0)
+    return round(seconds_in / 60 * per_min + chars_out * per_mchars / 1_000_000, 8)
+
+
 def calculate_cost(
     provider: str,
     model: str,

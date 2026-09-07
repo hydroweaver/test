@@ -132,6 +132,16 @@ Returns the reply plus `usage` (exact tokens, summed across every tool-call turn
 - **Token counts** come straight from each provider's own API response, summed across
   every turn of the tool-calling loop (the model may call `search_website` more than
   once before answering) - never estimated locally.
+- **Voice notes cost more than their tokens say.** Transcription (Whisper, per
+  minute) and spoken replies (TTS, per character) are billed by OpenAI on top of the
+  model, whichever model answered. Both are included in the row's cost and broken out
+  as `audio_cost_usd` - on a typical voice exchange they are over half the total, and
+  invisible if you only count tokens. The transcription minute is estimated from the
+  file size (WhatsApp voice notes are ~16 kbps opus) rather than by decoding it.
+- **Failed and unpriced replies are excluded from the totals.** A reply that errored
+  spent nothing, and one whose model isn't in `pricing.json` has an unknown cost, not
+  a zero one - counting either in the denominator makes a model look cheaper the more
+  often it fails. The count of excluded rows is shown next to the total.
 - **Cost** is `tokens * price_per_million` from `pricing.json`. Provider pricing
   drifts, especially OpenAI/Gemini - treat it as a starting point and edit that file
   if a rate is off.
