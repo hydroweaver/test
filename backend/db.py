@@ -188,6 +188,9 @@ CREATE TABLE IF NOT EXISTS crm_incidents (
 MIGRATIONS = [
     ("conversations", "reply_pref", "TEXT"),   # 'voice' or 'text', per customer
     ("settings", "history_limit", "INTEGER DEFAULT 6"),  # 0 = replay the whole thread
+    ("settings", "system_prompt", "TEXT"),     # NULL = use system_prompt.txt
+    ("usage_log", "history_limit", "INTEGER"),  # the setting this reply ran under
+    ("usage_log", "history_msgs", "INTEGER"),   # turns actually replayed, and re-billed
     ("usage_log", "user_message", "TEXT"),
     ("usage_log", "reply_text", "TEXT"),
     ("usage_log", "media_kind", "TEXT"),
@@ -258,12 +261,14 @@ def key_status(provider: str) -> dict:
 def get_settings() -> dict:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT active_provider, active_model, history_limit FROM settings WHERE id = 1"
+            "SELECT active_provider, active_model, history_limit, system_prompt "
+            "FROM settings WHERE id = 1"
         ).fetchone()
     limit = row["history_limit"]
     return {
         "active_provider": row["active_provider"],
         "active_model": row["active_model"],
+        "system_prompt": row["system_prompt"],   # None = fall back to the file
         # 0 means replay the entire conversation; the column is NULL on databases
         # created before this setting existed.
         "history_limit": 6 if limit is None else int(limit),
@@ -280,6 +285,13 @@ def update_settings(provider: str, model: str, history_limit: int | None = None)
             conn.execute(
                 "UPDATE settings SET active_provider = ?, active_model = ?, history_limit = ?, "
                 "updated_at = datetime('now') WHERE id = 1", (provider, model, history_limit))
+
+
+def set_system_prompt(text: str | None) -> None:
+    """Store an edited prompt. None restores the system_prompt.txt default."""
+    with get_conn() as conn:
+        conn.execute("UPDATE settings SET system_prompt = ?, updated_at = datetime('now') "
+                     "WHERE id = 1", (text,))
 
 
 def get_or_create_conversation(phone_number: str) -> int:
@@ -349,6 +361,8 @@ def log_usage(
     media_kind: str | None = None,
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
+    history_limit: int | None = None,
+    history_msgs: int | None = None,
 ) -> None:
     """One row per exchange: exactly one incoming message and the reply it produced,
     with every token spent in between (including tool-call turns) counted against it."""
@@ -357,8 +371,8 @@ def log_usage(
             "INSERT INTO usage_log "
             "(channel, phone_number, provider, model, input_tokens, output_tokens, total_tokens, "
             " cost_usd, tool_call_count, turn_count, latency_ms, error, user_message, reply_text, media_kind, "
-            " cache_read_tokens, cache_write_tokens) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " cache_read_tokens, cache_write_tokens, history_limit, history_msgs) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 channel,
                 phone_number,
@@ -377,6 +391,8 @@ def log_usage(
                 media_kind,
                 cache_read_tokens,
                 cache_write_tokens,
+                history_limit,
+                history_msgs,
             ),
         )
 
@@ -388,7 +404,8 @@ def export_usage_rows() -> list[dict]:
             "SELECT id, created_at, channel, phone_number, provider, model, "
             "input_tokens, output_tokens, total_tokens, cache_read_tokens, cache_write_tokens, "
             "cost_usd, tool_call_count, turn_count, latency_ms, media_kind, "
-            "user_message, reply_text, error FROM usage_log ORDER BY id"
+            "history_limit, history_msgs, user_message, reply_text, error "
+            "FROM usage_log ORDER BY id"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -418,7 +435,8 @@ def get_usage(limit: int = 50, offset: int = 0) -> dict:
         rows = conn.execute(
             "SELECT id, created_at, channel, phone_number, provider, model, input_tokens, "
             "output_tokens, total_tokens, cost_usd, tool_call_count, turn_count, latency_ms, error, "
-            "user_message, reply_text, media_kind, cache_read_tokens, cache_write_tokens "
+            "user_message, reply_text, media_kind, cache_read_tokens, cache_write_tokens, "
+            "history_limit, history_msgs "
             "FROM usage_log ORDER BY id DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()

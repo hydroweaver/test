@@ -107,6 +107,15 @@ Returns the reply plus `usage` (exact tokens, summed across every tool-call turn
 
 ## How the numbers work
 
+- **The system prompt is editable from `/admin`** (the collapsible panel above the
+  log), with a live char/token count and a *Reset to file* button. It's the largest
+  fixed part of every request, so trimming it is the most direct way to cut per-reply
+  cost - edit, save, and the next message uses it. Saved in the database, so it
+  survives a redeploy wherever the database does; `system_prompt.txt` stays the
+  default and the reset target.
+- **Every row records the history setting it ran under** (`history_limit`, and
+  `history_msgs` for the turns actually replayed), in the log and the CSV, so a run
+  at `last 6` stays comparable against one at `all` after the fact.
 - **History replay is the other cost lever.** Models are stateless: every request
   re-sends the conversation, so a longer window is re-billed on every turn. All
   messages are always stored; the **History** toggle in `/admin` (last 6 / last 20 /

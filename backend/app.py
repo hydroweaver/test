@@ -377,6 +377,8 @@ def _handle_message(
     # Everything is stored; this decides how much gets replayed into the prompt (and
     # re-billed) each turn. 0 = the whole thread.
     history = db.get_recent_messages(conversation_id, limit=settings["history_limit"])
+    # The edited prompt wins; the file is the default and the reset target.
+    system_prompt = settings["system_prompt"] or WHATSAPP_SYSTEM_PROMPT
 
     start = time.time()
     result = None
@@ -391,7 +393,7 @@ def _handle_message(
     else:
         try:
             result = run_agent(
-                provider, body, model, WHATSAPP_SYSTEM_PROMPT, history,
+                provider, body, model, system_prompt, history,
                 image=image, caller_phone=from_number,
             )
             reply_text = result.reply
@@ -452,6 +454,7 @@ def _handle_message(
             tool_call_count=result.tool_call_count if result else 0,
             turn_count=result.turn_count if result else 0,
             phone_number=from_number, latency_ms=latency_ms, error=error,
+            history_limit=settings["history_limit"], history_msgs=len(history),
             user_message=body, reply_text=reply_text, media_kind=media_kind,
             cache_read_tokens=result.cache_read_tokens if result else 0,
             cache_write_tokens=result.cache_write_tokens if result else 0,
@@ -688,6 +691,37 @@ def admin_update_settings(req: SettingsUpdate):
 @admin_router.get("/usage")
 def admin_usage(limit: int = 50, offset: int = 0):
     return db.get_usage(limit, offset)
+
+
+@admin_router.get("/prompt")
+def admin_get_prompt():
+    """The prompt actually in use, plus the file default so the UI can offer a reset."""
+    stored = db.get_settings()["system_prompt"]
+    text = stored or WHATSAPP_SYSTEM_PROMPT
+    return {
+        "prompt": text,
+        "edited": stored is not None,
+        "chars": len(text),
+        # Rough, but enough to see the cost effect of an edit before sending anything.
+        "approx_tokens": len(text) // 4,
+        "file_default": WHATSAPP_SYSTEM_PROMPT,
+    }
+
+
+class PromptUpdate(BaseModel):
+    prompt: str | None = None   # null restores the system_prompt.txt default
+
+
+@admin_router.post("/prompt")
+def admin_set_prompt(req: PromptUpdate):
+    text = req.prompt.strip() if req.prompt else None
+    if text is not None and len(text) < 20:
+        raise HTTPException(status_code=400,
+                            detail="That prompt looks too short to be intentional (min 20 chars).")
+    db.set_system_prompt(text)
+    active = text or WHATSAPP_SYSTEM_PROMPT
+    return {"ok": True, "edited": text is not None, "chars": len(active),
+            "approx_tokens": len(active) // 4}
 
 
 @admin_router.get("/export.csv")
