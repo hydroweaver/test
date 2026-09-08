@@ -61,7 +61,7 @@ def _run_openai_agent(message, model, system, history, image, toolbox) -> AgentR
         input_items.append({"role": "user", "content": message})
 
     # OpenAI caches automatically (no opt-in) for prompts over ~1k tokens.
-    input_tokens = output_tokens = tool_calls = cache_read = 0
+    input_tokens = output_tokens = tool_calls = cache_read = cache_write = 0
     for turn in range(MAX_TOOL_TURNS + 1):
         force_text = turn == MAX_TOOL_TURNS
         kwargs = {"instructions": system} if system else {}
@@ -74,17 +74,23 @@ def _run_openai_agent(message, model, system, history, image, toolbox) -> AgentR
         )
         details = getattr(response.usage, "input_tokens_details", None)
         cached = getattr(details, "cached_tokens", 0) or 0
-        # OpenAI's input_tokens INCLUDES the cached ones - subtract so they aren't
-        # billed twice, once at full rate and once at the cache rate.
-        input_tokens += max(response.usage.input_tokens - cached, 0)
+        # Writing the prefix into the cache is billed separately, and on the newer
+        # models at a HIGHER rate than plain input (gpt-5.6-sol: $5.00/M write vs
+        # $4.00/M input). Ignoring it undercounts the first turn of every
+        # conversation, which is exactly when the write happens.
+        written = getattr(details, "cache_write_tokens", 0) or 0
+        # input_tokens is the total and INCLUDES both the cached reads and the
+        # written tokens - subtract both so each is charged once, at its own rate.
+        input_tokens += max(response.usage.input_tokens - cached - written, 0)
         cache_read += cached
+        cache_write += written
         output_tokens += response.usage.output_tokens
 
         function_calls = [item for item in response.output if item.type == "function_call"]
         if not function_calls or force_text:
             return AgentResult(
                 response.output_text, input_tokens, output_tokens, tool_calls, turn + 1,
-                toolbox.pending_media, cache_read, 0,
+                toolbox.pending_media, cache_read, cache_write,
             )
 
         input_items += response.output
@@ -97,7 +103,7 @@ def _run_openai_agent(message, model, system, history, image, toolbox) -> AgentR
             tool_calls += 1
 
     return AgentResult("", input_tokens, output_tokens, tool_calls, MAX_TOOL_TURNS + 1,
-                       toolbox.pending_media, cache_read, 0)
+                       toolbox.pending_media, cache_read, cache_write)
 
 
 def _run_gemini_agent(message, model, system, history, image, toolbox) -> AgentResult:
